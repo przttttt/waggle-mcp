@@ -1,6 +1,6 @@
 [project]
 name = "waggle-mcp"
-version = "0.1.2"
+version = "0.1.3"
 description = "MCP server that gives LLMs persistent graph-structured memory"
 readme = "README.md"
 license = { text = "MIT" }
@@ -29,6 +29,13 @@ dependencies = [
   "starlette>=0.37.2",
   "uvicorn>=0.30.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/Abhigyan-Shekhar/Waggle-mcp"
+Repository = "https://github.com/Abhigyan-Shekhar/Waggle-mcp"
+Documentation = "https://github.com/Abhigyan-Shekhar/Waggle-mcp#readme"
+"Bug Tracker" = "https://github.com/Abhigyan-Shekhar/Waggle-mcp/issues"
+Changelog = "https://pypi.org/project/waggle-mcp/#history"
 
 [project.optional-dependencies]
 dev = [
