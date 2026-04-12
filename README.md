@@ -209,97 +209,82 @@ When the agent observes a conversation, the backend runs a Pydantic-validated LL
 
 ## Performance & Benchmarking
 
-All benchmark claims in this repository are reproducible from checked-in fixtures plus the local harness at [`scripts/benchmark_extraction.py`](./scripts/benchmark_extraction.py).
+All numbers below are measured from [`tests/artifacts/benchmark_current.json`](./tests/artifacts/benchmark_current.json) — run against the fixture versions currently checked in to `benchmarks/fixtures/`.
 
-**Run the harness locally:**
+Run it yourself:
 
 ```bash
 # Regex extraction baseline
 PYTHONPATH=src .venv/bin/python scripts/benchmark_extraction.py --extraction-backend regex
 
 # LLM extraction (requires local Ollama)
-PYTHONPATH=src .venv/bin/python scripts/benchmark_extraction.py --extraction-backend llm --ollama-model qwen2.5:7b --ollama-timeout-seconds 30
+PYTHONPATH=src .venv/bin/python scripts/benchmark_extraction.py \
+  --extraction-backend llm --ollama-model qwen2.5:7b --ollama-timeout-seconds 30
 
-# Comparative pilot (waggle vs chunked-vector RAG)
-PYTHONPATH=src .venv/bin/python scripts/benchmark_extraction.py --systems waggle rag_naive --output tests/artifacts/pilot_comparative.json
+# Comparative pilot (save a fresh artifact)
+PYTHONPATH=src .venv/bin/python scripts/benchmark_extraction.py \
+  --systems waggle rag_naive --output tests/artifacts/benchmark_current.json
 ```
 
 ### Extraction accuracy
 
-Fixture set: 12 dialogue pairs covering simple recall, interruptions, reversals, vague statements, and conflicting signals.
+Corpus: 12 dialogue pairs covering simple recall, interruptions, reversals, vague statements, and conflicting signals (`benchmarks/fixtures/extraction_cases.json`).
 
 | Backend | Cases | Accuracy |
 |---------|-------|----------|
 | Regex (fallback) | 12 | 33% |
-| LLM (`qwen2.5:7b`, 30s timeout) | 12 | 75% |
+| LLM (`qwen2.5:7b`, 30 s timeout) | 12 | 75% |
 
 ### Retrieval accuracy
 
-Fixture set: 18 nodes, 18 queries — 6 easy (direct paraphrase) and 12 hard (adversarial: semantic generalization, temporal disambiguation, indirect domain translation, privacy/security framing).
+Corpus: 18 nodes, 18 queries — 6 easy (direct paraphrase) and 12 hard (adversarial: semantic generalization, temporal disambiguation, indirect domain translation, privacy framing). Source: `benchmarks/fixtures/retrieval_cases.json`.
 
-| Corpus | Easy queries | Hard queries | Overall Hit@k |
-|--------|-------------|-------------|---------------|
-| 18-node benchmark | 6/6 = 100% | 9/12 = 75% | 15/18 = **83%** |
+| Difficulty | Queries | Hit@k |
+|------------|---------|-------|
+| Easy | 6 | 6/6 = 100% |
+| Hard (adversarial) | 12 | 9/12 = 75% |
+| **Overall** | **18** | **15/18 = 83%** |
 
-### Token efficiency vs. chunked-vector RAG
+### Token efficiency vs. naive chunked-vector RAG
 
-This is where Waggle's graph model has a **clear, measurable advantage**. The graph extracts and stores discrete facts rather than raw text chunks, so the context injected into each prompt is far smaller:
+Corpus: 24 multi-session scenarios, 50 retrieval queries (`benchmarks/fixtures/comparative_eval.json`).
 
 | System | Mean tokens | Median tokens | p95 tokens | Hit@k |
 |--------|-------------|---------------|------------|-------|
-| **Waggle** | **37.2** | **38.0** | **42.0** | 92% |
+| **Waggle** | **37.6** | **38.0** | **42.0** | 88% |
 | Naive chunked-vector RAG | 152.1 | 154.0 | 163.0 | 100% |
 
-**Waggle uses ~4× fewer tokens per retrieval** than the naive chunked baseline.
+**Waggle uses ~4× fewer tokens per retrieval** than the naive chunked baseline on this corpus.
 
-The tradeoff is honest: the chunked baseline achieves 100% Hit@k on this corpus because the corpus is not yet hard enough to stress it. **The token efficiency advantage is real and large; the retrieval advantage is not yet demonstrated at this corpus scale.** Corpus hardening is the next evaluation step — see [`tests/artifacts/pilot_comparative.md`](./tests/artifacts/pilot_comparative.md) for details.
+The tradeoff is honest: the chunked baseline achieves 100% Hit@k on this corpus because the corpus is not yet hard enough to stress it. **The token efficiency advantage is real and large; the retrieval superiority claim is not yet supported at this corpus scale.** Corpus hardening is the next evaluation step.
+
+### When extraction fails
+
+> **User:** "Yeah, let's just do that thing we talked about."
+
+The LLM assigns low confidence (`confidence < 0.5`) to ambiguous input; Waggle **drops the extraction silently** rather than storing a guess. The pipeline does **not** silently fall back to regex on timeout — backend failures surface as explicit errors that are logged.
 
 <details>
 <summary>Deduplication results (22-pair fixture — click to expand)</summary>
 
-Fixture set: 22 node pairs — 11 true duplicates (synonym, paraphrase, domain-level equivalence) and 11 false friends (same domain, distinct semantics). Balanced to test both false-positive and false-negative failure modes.
+Corpus: 22 node pairs — 11 true duplicates (synonym, paraphrase, domain equivalence) and 11 false friends (same technology category, different technology). Source: `benchmarks/fixtures/dedup_cases.json`.
 
-The dedup pipeline runs four layers in order:
-1. **Layer 0 — Entity-key hard block** — if both nodes reference *different* named technologies in the *same* category (e.g. `postgresql` vs `mysql`, both `database`), the merge is blocked unconditionally regardless of cosine score. Categories cover databases, frameworks, auth mechanisms, deployment targets, queues, and embedding models.
-2. **Layer 1 — Exact string match** — normalized content or label equality (free, always run)
-3. **Layer 2 — Substring containment** — catches restatements where one sentence is a strict subset of the other
-4. **Layer 3 — Semantic similarity** — cosine via `all-MiniLM-L6-v2`:
-   - Type-aware threshold: `decision`/`preference` nodes merge at 0.82; `fact` at 0.92; `entity` at 0.97
-   - Jaccard-boosted path: if bag-of-words overlap ≥ 0.35 AND cosine ≥ (type threshold − 0.05), treat as duplicate
-   - Conservative cosine fallback at global `dedup_similarity_threshold`
+The pipeline runs four layers:
+1. **Entity-key hard block** — if both nodes name *different* technologies in the *same* category (e.g. `postgresql` vs `mysql`), merge is blocked unconditionally.
+2. **Exact string match** — normalized content or label equality.
+3. **Substring containment** — one sentence is a strict subset of the other.
+4. **Semantic similarity** — cosine via `all-MiniLM-L6-v2`, with type-aware thresholds (`decision` 0.82 → `entity` 0.97) and a Jaccard-boosted path.
 
-Best measured result on the expanded fixture set: **12/22 = 55%**
+Best measured: **12/22 = 55%** at threshold 0.82.
 
-Threshold sweep (single uniform threshold, overrides type-aware logic in harness):
+The 55% ceiling is a known limitation: sentence-level cosine cannot reliably separate paraphrase true-dups from structural false-friends ("We decided on PostgreSQL" vs "We decided on MySQL" embed similarly). Planned next steps: entity-key extraction as a merge gate, bi-encoder fine-tuning on domain-specific pairs.
 
-| Threshold | Result | Notes |
-|-----------|--------|-------|
-| 0.82 | 12/22 = 55% | Best on this fixture set |
-| 0.85 | 11/22 = 50% | |
-| 0.88 | 11/22 = 50% | |
-| 0.90 | 10/22 = 45% | |
-| 0.92 | 10/22 = 45% | |
-| 0.95 | 11/22 = 50% | |
-| 0.97 | 11/22 = 50% | Current product default |
-
-**Root cause of the 55% ceiling:** `all-MiniLM-L6-v2` sentence embeddings cannot reliably separate near-synonym true duplicates from same-domain false friends at the cosine level. For example, "We decided to use PostgreSQL" and "We decided to use MySQL" score nearly as similar as two paraphrases of the PostgreSQL decision, because both sentences share the same structural template.
-
-**Planned improvements:**
-- Entity-type extraction: detect the named technology and add it to the merge key
-- Bi-encoder fine-tuning on domain-specific duplicate pairs
-- Production dedup logging to build a real-world fixture set from user data
+Full threshold sweep and detailed methodology: [`tests/artifacts/README.md`](./tests/artifacts/README.md).
 
 </details>
 
-### When extraction fails
+> Full artifacts, methodology, and rag_tuned comparison: [`tests/artifacts/README.md`](./tests/artifacts/README.md)
 
-*What happens when the user is too vague?*
-
-> **User:** "Yeah, let's just do that thing we talked about."
-
-Because the statement is entirely ambiguous, the LLM assigns low confidence (`confidence < 0.5`). Waggle **silently drops** the extraction rather than storing a guess. It is safer to omit a noisy extraction than to pollute the graph with unanchored nodes.
-
-The LLM pipeline does **not** silently fall back to regex on timeout. The first saved benchmark attempt surfaced two explicit `backend-unavailable` errors at the original 15s timeout. The stable run on this branch uses a configurable 30s timeout, and backend failures are logged explicitly.
 
 ---
 
