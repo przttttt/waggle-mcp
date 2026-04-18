@@ -68,28 +68,39 @@ def evaluate_locomo(
     results: list[LoCoMoCaseResult] = []
 
     import tempfile
-    for dialogue in entries:
-        dia_id = dialogue.get("dia_id", "default")
+    for entry in entries:
         with tempfile.TemporaryDirectory() as tmp:
             db_path = Path(tmp) / "memory.db"
-            graph = MemoryGraph(db_path=db_path, embedding_model=model_instance, tenant_id=dia_id)
+            graph = MemoryGraph(db_path=db_path, embedding_model=model_instance)
             
-            for session in dialogue.get("sessions", []):
-                session_id = session.get("id") or session.get("session_id")
-                # Simplified ingestion for the benchmark:
-                turns = session.get("turns", [])
-                for i in range(0, len(turns), 2):
-                    u = turns[i]
-                    a = turns[i+1] if i+1 < len(turns) else {"role": "assistant", "content": "..."}
+            # Real LoCoMo uses "conversation" dict with session_1, session_2... keys
+            conv = entry.get("conversation", {})
+            speaker_a = conv.get("speaker_a")
+            for i in range(1, 41):
+                session_key = f"session_{i}"
+                turns = conv.get(session_key)
+                if not turns:
+                    continue
+                
+                # Pair turns if possible
+                for j in range(0, len(turns), 2):
+                    t1 = turns[j]
+                    t2 = turns[j+1] if j+1 < len(turns) else {"text": "..."}
+                    
                     graph.observe_conversation(
-                        user_message=u.get("content", ""),
-                        assistant_response=a.get("content", ""),
-                        session_id=str(session_id)
+                        user_message=t1.get("text", ""),
+                        assistant_response=t2.get("text", ""),
+                        session_id=session_key
                     )
 
-            for qa in dialogue.get("qa", []):
+            for qa in entry.get("qa", []):
                 question = qa["question"]
-                gold_ids = qa.get("correct_session_ids") or qa.get("answer_session_ids", [])
+                # Evidence looks like ["D1:3", "D2:5"] -> map to ["session_1", "session_2"]
+                gold_ids = []
+                for ev in qa.get("evidence", []):
+                    if ":" in ev:
+                        session_num = ev.split(":")[0].replace("D", "")
+                        gold_ids.append(f"session_{session_num}")
                 
                 query_res = graph.query(
                     query=question,
@@ -137,9 +148,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--mode", choices=["graph", "replay", "fusion"], default="graph")
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--output", type=Path, default=None)
+    parser.add_argument("--embedding-model", type=str, default=None)
     args = parser.parse_args(argv)
 
-    report = evaluate_locomo(args.dataset_path, mode=args.mode, limit=args.limit)
+    model = None
+    if args.embedding_model:
+        model = EmbeddingModel(args.embedding_model)
+
+    report = evaluate_locomo(args.dataset_path, mode=args.mode, limit=args.limit, embedding_model=model)
     print(f"R@5: {report.r_at_5:.1%}")
     print(f"R@10: {report.r_at_10:.1%}")
     

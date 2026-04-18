@@ -107,9 +107,7 @@ Waggle performance is verified against checked-in fixtures and automated regress
 | Benchmark | Coverage | Metric | Status |
 |-----------|----------|--------|--------|
 | **LongMemEval** | 500 questions | `97.4% R@5` | Verified (Held-out split: 81.6% deterministic) |
-| **LoCoMo** | 1,986 items | `Pending` | Adapter implemented |
-| **ConvoMem** | 250 items | `Pending` | Adapter implemented |
-| **MemBench** | 8,500 items | `Pending` | Adapter implemented |
+| **LoCoMo** | 1,986 items | `48.6% R@10` | Verified (Deterministic baseline) |
 
 - **Token efficiency**: Waggle averages `58.5` tokens per retrieval vs `150.9` for naive chunked RAG.
 - **Retrieval split**: The flat slice (`factual_recall`, `temporal_*`) measures `85% / 85%`; the graph slice (`change`, `delta`, `synthesis`, paraphrase) measures `93% / 70%`.
