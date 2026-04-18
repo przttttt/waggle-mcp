@@ -152,3 +152,38 @@ def test_evaluate_longmemeval_reuses_disk_cache(tmp_path: Path) -> None:
     assert Path(first_report.cache_path).exists()
     assert Path(first_report.cache_path).with_suffix(".npz").exists()
     assert not Path(first_report.cache_path).with_suffix(".pkl").exists()
+
+def test_longmemeval_held_out_split(tmp_path):
+    dataset_path = tmp_path / "longmemeval_split_test.json"
+    # Create 100 items for easy splitting
+    items = [
+        {
+            "id": f"q{i}",
+            "question": f"Question {i}?",
+            "haystack_sessions": [],
+            "haystack_session_ids": [],
+            "haystack_dates": [],
+            "correct_session_ids": ["s1"]
+        }
+        for i in range(100)
+    ]
+    dataset_path.write_text(json.dumps(items))
+    
+    from waggle.longmemeval_benchmark import main
+    output_path = tmp_path / "results.json"
+    
+    # Run with held-out
+    main([str(dataset_path), "--held-out", "--output", str(output_path), "--limit", "100", "--embedding-model", "deterministic"])
+    
+    # Check for _dev and _test files
+    assert (tmp_path / "results_dev.json").exists()
+    assert (tmp_path / "results_test.json").exists()
+    
+    dev_data = json.loads((tmp_path / "results_dev.json").read_text())
+    test_data = json.loads((tmp_path / "results_test.json").read_text())
+    
+    # In my logic, 100 items -> 10% dev = 10 items
+    assert dev_data["case_count"] == 10
+    assert test_data["case_count"] == 90
+    assert dev_data["split_type"] == "dev"
+    assert test_data["split_type"] == "test"

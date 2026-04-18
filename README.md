@@ -93,20 +93,29 @@ Agent: [calls store_node() + store_edge(new_node → old_node, "contradicts")]
 
 Waggle performance is verified against checked-in fixtures and automated regression tests.
 
+### Project Fixtures
 | Area | Corpus | Result |
 |------|--------|--------|
-| Extraction | 25-case deterministic fixture | `100%` |
-| Retrieval | 18-query retrieval fixture | `83% Hit@k` |
-| Comparative graph eval | 27-scenario / 69-query corpus | `88% Hit@k`, `77% exact support`, `58.5` mean tokens |
-| Query stress | 40 adversarial retrieval-only cases | `98% Hit@k`, `98% exact support` |
-| Deduplication | 22 cases (semi-semantic) | `77% (17/22)`, zero false merges |
-| Unit Tests | Infrastructure & Logic | `90 passing tests` |
+| Extraction | 25-case deterministic fixture | `100.0%` |
+| Retrieval | 18-query retrieval fixture | `83.3% Hit@k` |
+| Comparative eval | 27-scenario / 69-query corpus | `88.4% Hit@k`, `76.8% exact support`, `58.5` mean tokens |
+| Query stress | 40 adversarial retrieval-only cases | `97.5% Hit@k`, `97.5% exact support` |
+| Deduplication | 22 cases (semi-semantic) | `77.3% (17/22)`, zero false merges |
+| Unit Tests | Infrastructure & Logic | `90+ passing tests` |
+
+### External Benchmarks
+| Benchmark | Coverage | Metric | Command |
+|-----------|----------|--------|---------|
+| **LongMemEval** | 500 questions | `97.4% R@5` | `scripts/benchmark_longmemeval.py` |
+| **LoCoMo** | 1,986 items | `Pending` | `scripts/benchmark_locomo.py` |
+| **ConvoMem** | 250 items | `Pending` | `scripts/benchmark_convomem.py` |
+| **MemBench** | 8,500 items | `Pending` | `scripts/benchmark_membench.py` |
 
 - **Token efficiency**: Waggle averages `58.5` tokens per retrieval vs `150.9` for naive chunked RAG.
 - **Retrieval split**: The flat slice (`factual_recall`, `temporal_*`) measures `85% / 85%`; the graph slice (`change`, `delta`, `synthesis`, paraphrase) measures `93% / 70%`.
 - **Deduplication**: Zero false-positive merges across the threshold sweep. Accuracy limited by conservative similarity bounds.
 
-Detailed benchmark artifacts and methodology are in [tests/artifacts/README.md](./tests/artifacts/README.md).
+Detailed benchmark artifacts and the new **[Benchmark Methodology](./docs/benchmark-methodology.md)** guide provide full traceability.
 
 ---
 

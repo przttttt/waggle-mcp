@@ -55,12 +55,16 @@ class LongMemEvalReport:
     r_at_5: float
     exact_at_5: float
     per_case: list[LongMemEvalCaseResult]
+    split_type: str = "full"
+    split_seed: int | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "dataset_path": self.dataset_path,
             "mode": self.mode,
             "case_count": self.case_count,
+            "split_type": self.split_type,
+            "split_seed": self.split_seed,
             "cache_status": self.cache_status,
             "cache_path": self.cache_path,
             "prepared_entry_count": self.prepared_entry_count,
@@ -423,12 +427,18 @@ def _raw_candidate_order(question: str, entry: PreparedLongMemEvalEntry, questio
 def evaluate_longmemeval(
     dataset_path: str | Path,
     *,
+    entries: list[dict[str, Any]] | None = None,
     embedding_model: Any | None = None,
     mode: Literal["graph_raw", "graph_hybrid"] = "graph_raw",
     limit: int | None = None,
     cache_dir: str | Path | None = None,
+    split_type: str = "full",
+    split_seed: int | None = None,
 ) -> LongMemEvalReport:
-    entries = _load_entries(dataset_path)
+    if entries is None:
+        entries = _load_entries(dataset_path)
+    
+    # We maintain the limit filter here for the 'full' run path
     if limit is not None:
         entries = entries[:limit]
     model_instance = embedding_model or EmbeddingModel()
@@ -440,9 +450,18 @@ def evaluate_longmemeval(
         limit=limit,
         dataset_digest=dataset_digest,
     )
+    # We always cache the full dataset preparation for efficiency, regardless of limit/split.
+    # The limit/split only affects which prepared entries we actually evaluate.
+    full_cache_key = _cache_key(
+        dataset_path,
+        mode=mode,
+        embedding_model=model_instance,
+        limit=None,
+        dataset_digest=dataset_digest,
+    )
     cache_metadata_path, cache_arrays_path = _cache_file_paths(
         dataset_path,
-        cache_key=cache_key,
+        cache_key=full_cache_key,
         cache_dir=cache_dir,
     )
     cached = _load_prepared_cache(cache_metadata_path, cache_arrays_path)
@@ -457,12 +476,39 @@ def evaluate_longmemeval(
             model_instance,
             [prepared_entry.question for prepared_entry in prepared_entries],
         )
-        _save_prepared_cache(
-            cache_metadata_path,
-            cache_arrays_path,
-            prepared_entries=prepared_entries,
-            question_embeddings=question_embeddings,
-        )
+        # Only save cache if we are evaluating the full dataset or at least a large chunk
+        if limit is None and split_type == "full":
+            _save_prepared_cache(
+                cache_metadata_path,
+                cache_arrays_path,
+                prepared_entries=prepared_entries,
+                question_embeddings=question_embeddings,
+            )
+    
+    # Crucial: if we loaded from cache, we might have more entries than requested
+    # We must match prepared_entries to entries by query_id
+    if len(prepared_entries) != len(entries):
+        entry_map = {e.question: (e, qe) for e, qe in zip(prepared_entries, question_embeddings)}
+        prepared_entries_filtered = []
+        question_embeddings_filtered = []
+        for entry in entries:
+            qtext = str(entry.get("question", ""))
+            if qtext in entry_map:
+                e, qe = entry_map[qtext]
+                prepared_entries_filtered.append(e)
+                question_embeddings_filtered.append(qe)
+        prepared_entries = prepared_entries_filtered
+        if question_embeddings_filtered:
+            question_embeddings = np.asarray(question_embeddings_filtered)
+        else:
+            question_embeddings = np.empty((0, 0), dtype=np.float32)
+
+    # Apply limit filter if requested
+    if limit is not None:
+        prepared_entries = prepared_entries[:limit]
+        question_embeddings = question_embeddings[:limit]
+        entries = entries[:limit]
+
     results: list[LongMemEvalCaseResult] = []
     for index, (entry, prepared_entry, question_embedding) in enumerate(
         zip(entries, prepared_entries, question_embeddings, strict=True),
@@ -496,11 +542,13 @@ def evaluate_longmemeval(
         dataset_path=str(dataset_path),
         mode=mode,
         case_count=case_count,
+        split_type=split_type,
+        split_seed=split_seed,
         cache_status=cache_status,
         cache_path=str(cache_metadata_path),
         prepared_entry_count=len(prepared_entries),
         prepared_session_count=prepared_session_count,
-        cache_key=cache_key,
+        cache_key=full_cache_key,
         r_at_5=hit_rate,
         exact_at_5=exact_rate,
         per_case=results,
@@ -520,11 +568,71 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Optional directory for prepared LongMemEval cache files (JSON metadata plus .npz embeddings).",
     )
     parser.add_argument("--output", type=Path, default=None)
+    parser.add_argument("--held-out", action="store_true", help="Split into 50 dev / 450 test based on fixed seed.")
+    parser.add_argument("--split-seed", type=int, default=42, help="Seed for dev/test split.")
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_arg_parser().parse_args(argv)
+    
+    if args.held_out:
+        import random
+        all_entries = _load_entries(args.dataset_path)
+        if len(all_entries) < 500:
+            print(f"Warning: held-out split requested but dataset only has {len(all_entries)} items. Proceeding with proportional split (10% dev).")
+            dev_size = max(1, len(all_entries) // 10)
+        else:
+            dev_size = 50
+        
+        # Consistent shuffle based on seed
+        indices = list(range(len(all_entries)))
+        random.Random(args.split_seed).shuffle(indices)
+        
+        dev_indices = indices[:dev_size]
+        test_indices = indices[dev_size:]
+        
+        dev_entries = [all_entries[i] for i in dev_indices]
+        test_entries = [all_entries[i] for i in test_indices]
+        
+        print(f"Held-out split: {len(dev_entries)} dev / {len(test_entries)} test (seed {args.split_seed})")
+        
+        dev_report = evaluate_longmemeval(
+            args.dataset_path,
+            entries=dev_entries,
+            embedding_model=EmbeddingModel(args.embedding_model),
+            mode=args.mode,
+            cache_dir=args.cache_dir,
+            split_type="dev",
+            split_seed=args.split_seed,
+        )
+        
+        test_report = evaluate_longmemeval(
+            args.dataset_path,
+            entries=test_entries,
+            embedding_model=EmbeddingModel(args.embedding_model),
+            mode=args.mode,
+            cache_dir=args.cache_dir,
+            split_type="test",
+            split_seed=args.split_seed,
+        )
+        
+        print("=" * 72)
+        print("waggle LongMemEval held-out benchmark")
+        print("=" * 72)
+        print(f"Dev R@5: {dev_report.r_at_5:.1%} | Test R@5: {test_report.r_at_5:.1%}")
+        print(f"Dev Exact@5: {dev_report.exact_at_5:.1%} | Test Exact@5: {test_report.exact_at_5:.1%}")
+        
+        if args.output is not None:
+            output_dev = args.output.with_name(args.output.stem + "_dev" + args.output.suffix)
+            output_test = args.output.with_name(args.output.stem + "_test" + args.output.suffix)
+            
+            output_dev.write_text(json.dumps(dev_report.to_dict(), indent=2), encoding="utf-8")
+            output_test.write_text(json.dumps(test_report.to_dict(), indent=2), encoding="utf-8")
+            print(f"Wrote held-out results to {output_dev} and {output_test}")
+        return 0
+
+    # Original full run path
     report = evaluate_longmemeval(
         args.dataset_path,
         embedding_model=EmbeddingModel(args.embedding_model),
