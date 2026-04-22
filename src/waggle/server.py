@@ -117,6 +117,26 @@ Scoping:
 - Prefer scoped memory over global memory in shared workspaces.
 """
 
+AUTOMATIC_MEMORY_RULE_TEXT = """Use Waggle automatically for conversational memory.
+
+At the start of a new session, if project, agent, or session scope is known, call prime_context.
+
+Before answering questions that may depend on prior decisions, preferences, constraints, project state, or earlier conversation context, call query_graph with the narrowest relevant scope.
+
+After completed turns that contain durable information such as decisions, preferences, constraints, requirements, user corrections, project facts, or meaningful task outcomes, call observe_conversation automatically.
+
+Do not ask the user to trigger Waggle manually. Use it in the background when relevant.
+"""
+
+_AGENTS_MEMORY_BLOCK_HEADER = "<!-- waggle:auto-memory:start -->"
+_AGENTS_MEMORY_BLOCK_FOOTER = "<!-- waggle:auto-memory:end -->"
+_AGENTS_MEMORY_BLOCK = (
+    f"{_AGENTS_MEMORY_BLOCK_HEADER}\n"
+    "## Waggle Automatic Memory\n\n"
+    f"{AUTOMATIC_MEMORY_RULE_TEXT.rstrip()}\n"
+    f"{_AGENTS_MEMORY_BLOCK_FOOTER}\n"
+)
+
 
 def _object_input_schema(
     properties: dict[str, Any] | None = None,
@@ -2143,6 +2163,25 @@ def _write_codex(db_path: str, python_exe: str) -> Path:
     return config_file
 
 
+def _write_codex_agents(root_dir: Path | None = None) -> Path:
+    """Write or update a Waggle-managed automatic-memory block in AGENTS.md."""
+    project_root = (root_dir or Path.cwd()).resolve()
+    agents_file = project_root / "AGENTS.md"
+    existing = agents_file.read_text() if agents_file.exists() else ""
+    pattern = re.compile(
+        rf"(?ms)^\s*{re.escape(_AGENTS_MEMORY_BLOCK_HEADER)}\n.*?^\s*{re.escape(_AGENTS_MEMORY_BLOCK_FOOTER)}\n?"
+    )
+
+    block = _AGENTS_MEMORY_BLOCK
+    if pattern.search(existing):
+        updated = pattern.sub(block, existing, count=1)
+    else:
+        separator = "\n\n" if existing.strip() else ""
+        updated = existing.rstrip() + separator + block
+    agents_file.write_text(updated.rstrip() + "\n")
+    return agents_file
+
+
 def _write_other(db_path: str, python_exe: str) -> Path:
     """Write a generic JSON snippet to ~/waggle-mcp-config.json."""
     config_file = Path.home() / "waggle-mcp-config.json"
@@ -2201,6 +2240,14 @@ def _run_init() -> int:
     except OSError as exc:
         _fail(f"Could not write config: {exc}")
         return 1
+
+    if client == "Codex":
+        try:
+            agents_file = _write_codex_agents()
+            _ok(f"Automatic memory instructions written to {agents_file}")
+        except OSError as exc:
+            _fail(f"Could not write AGENTS.md instructions: {exc}")
+            return 1
 
     # Create database directory
     db_dir = Path(db_path).parent

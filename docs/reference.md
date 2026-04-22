@@ -15,6 +15,8 @@ waggle-mcp init
 
 If `.venv` already exists from a different Python version, remove it and recreate it. Reusing a stale environment can leave wrapper scripts pointing at the wrong interpreter.
 
+When you run `waggle-mcp init` from a Codex workspace, it also writes a managed Waggle automatic-memory block into `AGENTS.md` in the current directory so Codex threads in that repo pick it up by default.
+
 ### Neo4j backend
 
 ```bash
@@ -184,7 +186,7 @@ After Waggle is installed as an MCP server, the normal workflow is conversationa
 - Work in a normal Codex thread.
 - Codex can use `observe_conversation`, `store_node`, `store_edge`, `query_graph`, and `prime_context` to persist and retrieve memory.
 - Later tasks can recover connected graph context even when the original thread is no longer in the current window.
-- To make this automatic rather than manual, add a Codex instruction/rule telling the agent to call `prime_context` at session start, `query_graph` before context-dependent answers, and `observe_conversation` after durable turns.
+- `waggle-mcp init` writes that Codex rule to `AGENTS.md` in the current workspace by default. If you configure Waggle manually, add a Codex instruction/rule telling the agent to call `prime_context` at session start, `query_graph` before context-dependent answers, and `observe_conversation` after durable turns.
 
 ### Claude Code
 

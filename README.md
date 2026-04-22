@@ -96,6 +96,8 @@ waggle-mcp init
 
 Running `init` will detect your MCP client (Codex, Claude, Cursor, or Antigravity), write the necessary configuration, and initialize your local database. Restart your client, and you're ready to go.
 
+For Codex, `waggle-mcp init` also writes a managed Waggle block into `AGENTS.md` in the current workspace so automatic memory is enabled by default for that repo.
+
 Manual MCP setup examples for **Codex**, **Claude Code**, **Cursor**, and **Antigravity** are in [docs/reference.md](./docs/reference.md#manual-client-configuration).
 
 Comprehensive live feature run (full tool surface, multi-query graph tests, export/import validation):
@@ -219,6 +221,8 @@ If you see that kind of recall in a new session, you're live.
 ## Automatic Memory Setup For Codex And Antigravity
 
 Registering Waggle as an MCP server is necessary, but it is not sufficient for automatic cross-session memory. The client still needs instructions telling the agent to use Waggle in the background.
+
+`waggle-mcp init` now does this automatically for Codex by writing a managed Waggle memory block to the workspace `AGENTS.md`. Other clients still need their equivalent instruction layer.
 
 There is not a better generic repo-side mechanism for third-party MCP clients today. If the client does not provide a runtime hook that automatically calls memory tools, the practical setup is:
 - register Waggle as an MCP server

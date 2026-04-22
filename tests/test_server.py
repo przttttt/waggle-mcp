@@ -12,11 +12,13 @@ from waggle.graph import MemoryGraph
 from waggle.models import NodeType, RelationType
 from waggle.config import AppConfig
 from waggle.server import (
+    AUTOMATIC_MEMORY_RULE_TEXT,
     WaggleServer,
     _assert_runtime_feature_parity,
     _build_parser,
     _default_graph,
     _run_admin_command,
+    _write_codex_agents,
     _write_codex,
     _write_other,
 )
@@ -692,3 +694,34 @@ def test_write_codex_config_updates_existing_file_without_duplicates(monkeypatch
     assert f'WAGGLE_DB_PATH = "{tmp_path / "memory.db"}"' in contents
     assert "/old/python" not in contents
     assert "/old/memory.db" not in contents
+
+
+def test_write_codex_agents_creates_managed_block(tmp_path: Path) -> None:
+    agents_path = _write_codex_agents(tmp_path)
+    contents = agents_path.read_text()
+
+    assert agents_path == tmp_path / "AGENTS.md"
+    assert "## Waggle Automatic Memory" in contents
+    assert AUTOMATIC_MEMORY_RULE_TEXT.strip() in contents
+    assert "<!-- waggle:auto-memory:start -->" in contents
+    assert "<!-- waggle:auto-memory:end -->" in contents
+
+
+def test_write_codex_agents_updates_existing_block_without_duplication(tmp_path: Path) -> None:
+    agents_file = tmp_path / "AGENTS.md"
+    agents_file.write_text(
+        "# Project Instructions\n\n"
+        "<!-- waggle:auto-memory:start -->\n"
+        "old instructions\n"
+        "<!-- waggle:auto-memory:end -->\n\n"
+        "Keep this note.\n"
+    )
+
+    _write_codex_agents(tmp_path)
+    contents = agents_file.read_text()
+
+    assert contents.count("<!-- waggle:auto-memory:start -->") == 1
+    assert contents.count("<!-- waggle:auto-memory:end -->") == 1
+    assert "old instructions" not in contents
+    assert "Keep this note." in contents
+    assert AUTOMATIC_MEMORY_RULE_TEXT.strip() in contents
