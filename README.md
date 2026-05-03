@@ -3,12 +3,12 @@
 </p>
 
 <p align="center">
-  <strong>Your AI forgets everything between sessions. Waggle gives it a graph-backed brain.</strong><br/>
-  Persistent, structured memory for AI agents — about 2.6× fewer tokens on factual lookups vs naive RAG.
+  <strong>Persistent memory that remembers decisions, reasons, and contradictions across sessions.</strong><br/>
+  Your AI forgets everything when the context window closes. Waggle gives it a graph-backed brain that persists.
 </p>
 
 <p align="center">
-  <em>Waggle is not a code indexer. It's a conversational memory engine — it remembers what you decided, why, and what changed, across every session.</em>
+  <em>Not a code indexer. A conversational memory engine — it stores what you decided, why you decided it, and what changed, so the next session picks up where the last one left off.</em>
 </p>
 
 <p align="center">
@@ -57,14 +57,15 @@ This imports a pre-loaded example graph and runs 4 scripted queries locally — 
 
 `waggle-mcp` is a local-first memory layer for MCP-compatible AI clients, built on a persistent knowledge graph.
 
+The core difference from flat note storage or chunked RAG is the graph structure. Waggle doesn't just store facts — it stores the relationships between them: this decision depends on that constraint, this preference contradicts that earlier one, this requirement was updated three sessions ago. When you query, you get a subgraph with the reasoning chain attached, not just the matching text.
+
 | Without Waggle | With Waggle |
 |---|---|
-| Huge prompts every session | Compact subgraph retrieved at query time |
-| Session-local memory only | Persistent multi-session memory |
-| Flat notes and chunks | Typed nodes and edges: decisions, reasons, contradictions |
-| "What changed?" requires replaying logs | Temporal queries and diffs are first-class |
-
-Waggle uses materially fewer tokens than naive chunked retrieval on factual lookups. Graph-traversal queries intentionally spend more context to carry update chains and contradictions — that's the point.
+| Paste context into every session | Compact subgraph retrieved at query time |
+| Session-local memory only | Persistent memory across all sessions |
+| Flat notes, no structure | Typed nodes and edges: decisions, reasons, contradictions |
+| "What changed?" requires replaying logs | Temporal queries, diffs, and conflict resolution are first-class |
+| Contradictions silently overwrite history | Both positions preserved, contradiction edge explicit |
 
 ---
 
@@ -306,59 +307,63 @@ You're using PostgreSQL for this project.
 
 ## MCP Tool Reference
 
-### Memory ingestion
+The full tool surface is large (~40 tools). In practice, an agent in normal use only needs the six core tools. Everything else is for human-driven inspection, graph management, and export workflows.
+
+### Core tools — what the agent calls automatically
+
+These are the tools your prompt rules or hooks should wire up. An agent that only knows these six will handle the vast majority of memory tasks correctly.
+
+| Tool | When the agent calls it |
+|---|---|
+| `observe_conversation` | After any turn containing a decision, preference, constraint, correction, or project fact. Persists the verbatim turn first, then extracts graph nodes. Returns `turn_id`, `verbatim_stored`, `nodes_extracted`, `edges_inferred`. |
+| `query_graph` | Before answering questions that may depend on prior context. Hybrid retrieval (graph + verbatim transcript) by default. Supports `as_of` for point-in-time queries. |
+| `prime_context` | At the start of a new session to hydrate context from the most relevant scoped memories. |
+| `graph_diff` | When the user asks what changed recently. |
+| `store_node` + `store_edge` | When the agent needs to store a single atomic fact or explicitly link two nodes. Prefer `observe_conversation` for conversational turns — use these for structured, deliberate writes. |
+
+> `observe_conversation` and `decompose_and_store` create edges automatically. If you only call `store_node`, you get isolated facts with no traversal value.
+
+### Extended retrieval — agent-callable, situational
 
 | Tool | Description |
 |---|---|
-| `observe_conversation` | **Primary ingestion tool.** Persists the verbatim turn first, then runs graph extraction. Returns `turn_id`, `verbatim_stored`, `nodes_extracted`, `edges_inferred`. |
-| `store_node` | Store a single atomic fact, decision, preference, or entity as a node. |
-| `store_edge` | Create a typed relationship between two nodes. |
-| `decompose_and_store` | Break long content into atomic nodes and infer edges automatically. |
-| `update_node` | Update an existing node's content, label, or tags. |
-| `delete_node` | Delete a node and all its edges. |
-
-### Memory retrieval
-
-| Tool | Description |
-|---|---|
-| `query_graph` | Semantic search returning a subgraph. Hybrid retrieval (graph + verbatim transcript) by default. Supports `as_of` and `include_invalidated` for temporal queries. |
-| `aggregate_graph` | Broad filtered subgraph for map-reduce tasks. Supports `node_types`, `tags`, `as_of`, and `include_invalidated` filters. |
-| `prime_context` | Build a compact context brief at session start. |
+| `aggregate_graph` | Broad filtered subgraph for map-reduce tasks. Use when you want a large scoped slice rather than high-precision top-K. Supports `node_types`, `tags`, `as_of`, `include_invalidated`. |
 | `get_related` | Fetch the neighborhood around a specific node by ID. |
 | `get_node_history` | Inspect a node's evidence, validity window, and connected context. |
-| `debug_retrieval` | Diagnose retrieval ranking for a query — shows embedding scores, window routing, and tiered vs flat comparison. |
+| `get_topics` | Topic clusters via community detection across the full tenant graph. |
+| `timeline` | Chronological view of memory changes for a node or query. |
+| `list_conflicts` | List unresolved contradiction and update edges. |
+| `resolve_conflict` | Mark a conflict resolved. Pass `winner` (node ID) to supersede the losing node — sets its `valid_to` to now. |
 
-### Graph inspection
+### Operator / human tools — not for routine agent use
+
+These are for you as the operator: graph health, deduplication, export, and migration. Exposing all of these to an agent in normal use adds noise without benefit.
+
+**Graph management**
 
 | Tool | Description |
 |---|---|
-| `get_stats` | Node/edge counts, type breakdowns, and recent highly-connected nodes. |
-| `get_topics` | Topic clusters via community detection. |
-| `graph_diff` | What changed in the graph recently (added nodes, edges, contradictions). |
-| `timeline` | Chronological view of memory changes for a node or query. |
+| `update_node` | Update an existing node's content, label, or tags. |
+| `delete_node` | Delete a node and all its edges. |
+| `decompose_and_store` | Break long content into atomic nodes and infer edges automatically. |
+| `dedup_candidates` | Return near-duplicate node pairs above a similarity threshold for human review. |
+| `canonicalize_node` | Merge multiple nodes into one canonical node. Repoints all edges, collects aliases. Idempotent. |
+| `edge_quality_report` | Audit edge quality — counts, average confidence per type, top/bottom confidence edges. |
+| `debug_retrieval` | Diagnose retrieval ranking for a query — embedding scores, window routing, tiered vs flat comparison. |
+
+**Context windows**
+
+| Tool | Description |
+|---|---|
 | `list_context_scopes` | Known agent, project, and session scope values. |
 | `list_context_windows` | Chat/session-level memory containers with status and node counts. |
 | `get_context_window` | Inspect one context window and its nodes. |
 | `close_context_window` | Close a session window and derive cross-window edges. |
 | `window_graph_viz` | Export the context-window graph as an interactive HTML visualization. |
 | `export_graph_html` | Export the memory graph as an interactive HTML visualization. |
-| `edge_quality_report` | Audit edge quality — counts, average confidence per type, top/bottom confidence edges. |
+| `get_stats` | Node/edge counts, type breakdowns, and recent highly-connected nodes. |
 
-### Conflict management
-
-| Tool | Description |
-|---|---|
-| `list_conflicts` | List contradiction and update edges. |
-| `resolve_conflict` | Mark a conflict resolved. Pass `winner` (node ID) to supersede the losing node — its `valid_to` is set to now, excluding it from future default queries. |
-
-### Deduplication
-
-| Tool | Description |
-|---|---|
-| `dedup_candidates` | Return near-duplicate node pairs above a similarity threshold for human review. |
-| `canonicalize_node` | Merge multiple nodes into one canonical node. Repoints all edges and collects aliases. Idempotent. |
-
-### .abhi memory files (git-vocabulary interface)
+**Memory files — git-vocabulary interface**
 
 Waggle uses a git-inspired vocabulary for portable memory snapshots:
 
@@ -375,7 +380,7 @@ Waggle uses a git-inspired vocabulary for portable memory snapshots:
 
 Legacy tool names (`export_graph_backup`, `import_abhi`, `diff_abhi`, `merge_abhi`, `validate_abhi`, `inspect_abhi`, `query_abhi`) are still accepted and automatically mapped to their canonical equivalents.
 
-### Vault and export
+**Vault**
 
 | Tool | Description |
 |---|---|
@@ -521,16 +526,23 @@ Measured on the full 500-question LongMemEval-S split (`all-MiniLM-L6-v2`, warm 
 | `graph_raw` | 97.4% | **89.0%** | 89.0% | 89.0% |
 | `graph_hybrid` | 97.0% | 87.2% | 94.8% | 98.0% |
 
-`graph_raw` at 89.0% Exact@5 is the headline number — no tunable reranking heuristics, fairest apples-to-apples comparison. `graph_hybrid` recovers strongly at higher cutoffs (Exact@20 = 98.0%).
+**Which mode should you use?**
+
+- Use `graph_raw` (default) when you want the highest precision in the top 5 results. It has no tunable reranking heuristics, making it the most stable and reproducible mode.
+- Use `graph_hybrid` when coverage matters more than top-5 precision — it finds nearly everything by K=20 (98.0% Exact@20), at the cost of slightly lower Exact@5. The hybrid path combines graph traversal with verbatim transcript retrieval, which helps for queries where the exact phrasing matters.
+
+The `graph_hybrid` reranking weights show some dev-set sensitivity (see overfitting check below), so treat its Exact@5 number as a softer figure than `graph_raw`.
 
 **Overfitting check (held-out 50 dev / 450 test, seed 42):**
 
 | Mode | Dev Exact@5 | Test Exact@5 | Gap |
 |---|---|---|---|
-| `graph_raw` | 88.0% | 89.1% | +1.1pp — stable |
+| `graph_raw` | 88.0% | 89.1% | +1.1pp — stable across the split |
 | `graph_hybrid` | 92.0% | 86.7% | −5.3pp — reranking weights have dev-set sensitivity |
 
-Token use: 63.0 mean context tokens for Waggle vs 161.8 for naive RAG baseline (~2.6× fewer on factual lookups).
+`graph_raw` generalises cleanly. The `graph_hybrid` gap is expected — heuristic reranking weights are partially tuned to this distribution. It's not a correctness problem; it means the hybrid Exact@5 number is less portable than the raw one.
+
+**Context efficiency:** On the same LongMemEval-S factual lookup queries, Waggle uses 63 mean context tokens vs 162 for a naive chunked baseline — about 2.6× fewer. This is a comparison against untuned chunked retrieval, not a production RAG system. The more meaningful claim is qualitative: graph retrieval returns a subgraph with the reasoning chain attached, not just the matching text chunk.
 
 Local latency (SQLite + deterministic embeddings): `observe_conversation` 1.54 ms mean, `query_graph` 1.60 ms mean, `graph_diff` 0.80 ms mean.
 
