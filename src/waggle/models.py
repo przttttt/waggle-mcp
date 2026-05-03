@@ -53,6 +53,9 @@ class Node(BaseModel):
     content: str
     node_type: NodeType
     tags: list[str] = Field(default_factory=list)
+    # aliases: all phrasings that have been merged into this canonical node.
+    # Populated automatically during dedup; also updated by canonicalize_node.
+    aliases: list[str] = Field(default_factory=list)
     source_prompt: str = ""
     embedding_model_id: str = ""
     embedding_dim: int = 0
@@ -264,6 +267,27 @@ class NodeStoreResult(BaseModel):
     conflicts: list[ConflictRecord] = Field(default_factory=list)
 
 
+class CanonicalizeResult(BaseModel):
+    canonical_node: Node
+    merged_node_ids: list[str] = Field(default_factory=list)
+    edges_repointed: int = 0
+    aliases_added: list[str] = Field(default_factory=list)
+
+
+class DedupCandidatePair(BaseModel):
+    node_id_a: str
+    node_id_b: str
+    label_a: str
+    label_b: str
+    similarity: float
+
+
+class DedupCandidatesResult(BaseModel):
+    pairs: list[DedupCandidatePair] = Field(default_factory=list)
+    threshold: float = 0.85
+    total_nodes_scanned: int = 0
+
+
 class BackupResult(BaseModel):
     output_path: str
     tenant_id: str = ""
@@ -284,6 +308,7 @@ class AbhiExportResult(BaseModel):
     encrypted: bool = False
     encryption_algorithm: str = ""
     executed_actions: list[str] = Field(default_factory=list)
+    export_context: dict[str, Any] = Field(default_factory=dict)
 
 
 class ImportResult(BaseModel):
@@ -438,6 +463,12 @@ class ObservationResult(BaseModel):
     created_count: int = 0
     reused_count: int = 0
     conflicts: list[ConflictRecord] = Field(default_factory=list)
+    # New fields for verbatim-first architecture with async extraction enrichment
+    turn_id: str = ""  # UUID for the turn, persisted before extraction
+    verbatim_stored: bool = True  # Whether the raw turn was successfully persisted
+    nodes_extracted: int = 0  # Number of nodes successfully extracted and stored
+    edges_inferred: int = 0  # Number of edges inferred between extracted nodes
+    extraction_errors: list[str] = Field(default_factory=list)  # Non-fatal extraction errors logged for diagnostics
 
 
 class GraphDiffResult(BaseModel):
