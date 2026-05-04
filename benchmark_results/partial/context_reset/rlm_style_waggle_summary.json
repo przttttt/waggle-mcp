@@ -1,27 +1,48 @@
 {
   "warning": "This benchmark follows the benchmark families used in the RLM paper, but uses deterministic synthetic memory tasks. Do not compare numerically to the RLM paper.",
-  "total_cases": 3,
+  "total_cases": 6,
   "families": {
     "ContextReset": {
+      "no_memory": {
+        "avg_score": 0.0,
+        "avg_f1": 0.0,
+        "avg_tokens": 0.0,
+        "avg_latency_ms": 0.0,
+        "count": 1
+      },
       "raw_context": {
         "avg_score": 0.0,
         "avg_f1": 0.0,
         "avg_tokens": 1413.0,
-        "avg_latency_ms": 5.2,
+        "avg_latency_ms": 3.2,
         "count": 1
       },
       "query_graph": {
-        "avg_score": 0.0,
-        "avg_f1": 0.0,
-        "avg_tokens": 76.0,
-        "avg_latency_ms": 8.8,
+        "avg_score": 0.875,
+        "avg_f1": 1.0,
+        "avg_tokens": 96.0,
+        "avg_latency_ms": 1.2,
         "count": 1
       },
-      "build_context": {
+      "prime_context": {
         "avg_score": 0.0,
         "avg_f1": 0.0,
-        "avg_tokens": 121.0,
-        "avg_latency_ms": 32.6,
+        "avg_tokens": 32.0,
+        "avg_latency_ms": 2.6,
+        "count": 1
+      },
+      "bm25_topk": {
+        "avg_score": 0.0,
+        "avg_f1": 0.0,
+        "avg_tokens": 1413.0,
+        "avg_latency_ms": 2.3,
+        "count": 1
+      },
+      "rmca_full": {
+        "avg_score": 1.0,
+        "avg_f1": 1.0,
+        "avg_tokens": 315.0,
+        "avg_latency_ms": 13.3,
         "count": 1
       }
     }

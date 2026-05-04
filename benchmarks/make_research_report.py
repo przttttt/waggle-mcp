@@ -257,6 +257,19 @@ We ablate seven RMCA components by disabling one step at a time via `AblationCon
 **Expected finding:** `rmca_no_graph_expansion` and `rmca_no_conflict_resolution`
 should score strictly lower than `rmca_full` on OOLONG-Pairs-style tasks, confirming
 that graph expansion and conflict resolution are load-bearing components.
+
+### Ablation Interpretation
+
+On the current synthetic pairwise benchmark, decomposition is the primary
+load-bearing RMCA component. Disabling decomposition (`rmca_no_decomposition`)
+or replacing it with random subqueries (`rmca_random_subqueries`) reduces
+pairwise score from 1.0 to 0.0. Disabling graph expansion
+(`rmca_no_graph_expansion`) or explicit conflict resolution
+(`rmca_no_conflict_resolution`) does not reduce score at scale 128, indicating
+that direct retrieval already surfaces the conflict nodes in this setup.
+
+Future pairwise variants should be constructed to isolate graph traversal
+benefits. See `pairwise_hidden_edge` benchmark family for this purpose.
 """
 
 
@@ -368,6 +381,36 @@ python benchmarks/failure_analysis.py --results-dir benchmark_results/
     return "## Failure Analysis\n\n" + adjusted
 
 
+def _section_supported_claims() -> str:
+    return """\
+## Supported Claims
+
+1. **RMCA decomposition improves pairwise conflict retrieval** on synthetic memory tasks.
+   Evidence: Ablation shows `rmca_no_decomposition` drops pairwise score from 1.0 to 0.0.
+   Caveat: Synthetic data only.
+
+2. **RMCA structured context improves LLM answerability** on pairwise conflict tasks.
+   Evidence: Groq llama-3.3-70b F1=0.64 for rmca_full vs F1=0.00 for query_graph at scale=128.
+   Caveat: Single scale, single model. Needs replication across scales/seeds.
+
+3. **RMCA reduces injected tokens** compared with raw-context baselines on specific tasks.
+   Evidence: S-NIAH: build_context uses 13-14% of raw_context tokens at all scales.
+   Caveat: Synthetic data only.
+"""
+
+
+def _section_not_yet_supported() -> str:
+    return """\
+## Not Yet Supported
+
+1. **RMCA solves session continuation / ContextReset.** Score 0.0 in current setup due to query/scope issues being investigated.
+2. **Graph expansion is load-bearing.** No delta observed at scale=128. Requires pairwise_hidden_edge benchmark.
+3. **Conflict resolution is load-bearing.** Same as above.
+4. **Results generalize to real-world agent traces.** Synthetic data only.
+5. **Results are comparable to the RLM paper's numerical results.** Different datasets and model setup.
+"""
+
+
 def _section_limitations() -> str:
     return f"""\
 ## Limitations
@@ -449,6 +492,14 @@ def generate_report(
         "---",
         "",
         _section_failure_analysis(rd),
+        "",
+        "---",
+        "",
+        _section_supported_claims(),
+        "",
+        "---",
+        "",
+        _section_not_yet_supported(),
         "",
         "---",
         "",

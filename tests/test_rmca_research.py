@@ -347,6 +347,7 @@ def test_research_report_has_all_sections(tmp_path):
         "Ablations", "Context-Reset", "Budget Scaling",
         "Answer-Level Evaluation", "Failure Analysis",
         "Limitations", "Reproducibility Commands",
+        "Supported Claims", "Not Yet Supported",
     ]
     for section in required_sections:
         assert section in content, f"Section '{section}' missing from research report"
@@ -364,6 +365,8 @@ def test_all_clis_support_help():
         "answer_level_eval.py",
         "failure_analysis.py",
         "make_research_report.py",
+        "generate_paper_tables.py",
+        "debug_context_reset.py",
     ]
     for cli in clis:
         result = subprocess.run(
@@ -411,3 +414,68 @@ def test_multi_seed_output_has_seed_column(tmp_path):
 
     seeds_in_csv = {row["seed"] for row in rows}
     assert len(seeds_in_csv) >= 2, f"Expected ≥2 distinct seed values, got: {seeds_in_csv}"
+
+
+# ---------------------------------------------------------------------------
+# Test — test_no_api_key_in_output_files (Task 1)
+# ---------------------------------------------------------------------------
+
+
+def test_no_api_key_in_output_files(tmp_path, monkeypatch):
+    """
+    Run answer_level_eval with --answerer groq but GROQ_API_KEY unset.
+    Assert the output CSV/JSON/MD files do not contain the string 'gsk_'.
+    """
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    output_dir = str(tmp_path / "groq_no_key_out")
+    result = subprocess.run(
+        [
+            sys.executable, str(BENCH / "answer_level_eval.py"),
+            "--answerer", "groq",
+            "--methods", "rmca_full",
+            "--scales", "10",
+            "--families", "pairwise",
+            "--seed", "42",
+            "--output", output_dir,
+        ],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        cwd=str(ROOT),
+        env={k: v for k, v in __import__("os").environ.items() if k != "GROQ_API_KEY"},
+    )
+    assert result.returncode == 0, f"answer_level_eval.py failed:\n{result.stderr}"
+
+    out = Path(output_dir)
+    for ext in ("*.csv", "*.json", "*.md"):
+        for fpath in out.glob(ext):
+            content = fpath.read_text()
+            assert "gsk_" not in content, (
+                f"API key pattern 'gsk_' found in output file {fpath}"
+            )
+
+
+# ---------------------------------------------------------------------------
+# Test — test_groq_answerer_graceful_fallback (Task 1)
+# ---------------------------------------------------------------------------
+
+
+def test_groq_answerer_graceful_fallback(monkeypatch):
+    """
+    When GROQ_API_KEY is missing, GroqAnswerer.extract() returns a non-empty string
+    (falls back to DeterministicAnswerer).
+    """
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+
+    from answer_level_eval import GroqAnswerer
+
+    answerer = GroqAnswerer()
+    context_pack = """### Waggle Recursive Context Pack
+Task: What database are we using?
+
+Current relevant decisions:
+- [decision] Use PostgreSQL for storage: We decided to use PostgreSQL as the primary database.
+"""
+    result = answerer.extract(context_pack, "What database are we using?", gold_answer="PostgreSQL")
+    assert isinstance(result, str), "GroqAnswerer.extract() must return a string"
+    assert len(result) > 0, "GroqAnswerer.extract() must return non-empty string when falling back"

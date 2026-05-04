@@ -306,6 +306,34 @@ def _run_build_context(graph: MemoryGraph, query: str, token_budget: int) -> tup
     return pack, latency
 
 
+def _run_build_context_scoped(
+    graph: MemoryGraph,
+    query: str,
+    token_budget: int,
+    project: str = "",
+    session_id: str = "",
+) -> tuple[str, float]:
+    """build_context_recursive with project scope filter."""
+    t0 = time.perf_counter()
+    try:
+        controller = RecursiveContextController(graph=graph)
+        result = controller.build_context(
+            query=query,
+            token_budget=token_budget,
+            depth=2,
+            max_subqueries=6,
+            mode="balanced",
+            project=project,
+            session_id=session_id,
+        )
+        pack = result.context_pack
+    except Exception as exc:
+        LOGGER.debug("build_context_scoped failed: %s", exc)
+        pack = ""
+    latency = (time.perf_counter() - t0) * 1000
+    return pack, latency
+
+
 def _run_hybrid_baseline(graph: MemoryGraph, query: str, token_budget: int) -> tuple[str, float]:
     """hybrid_baseline: single hybrid retrieval call only."""
     t0 = time.perf_counter()
@@ -542,6 +570,8 @@ _METHOD_RUNNERS = {
     "graph_expansion_no_recursion": _run_graph_expansion_no_recursion,
     "summary_memory": _run_summary_memory,
     "full_transcript_truncation": _run_full_transcript_truncation,
+    "no_memory": lambda g, q, b: ("", 0.0),
+    "rmca_full": _run_build_context,
 }
 
 
@@ -1586,10 +1616,13 @@ def run_context_reset_benchmark(
     difficulty: str = "easy",
     include_latency: bool = True,
     verbose: bool = False,
+    project: str = "context_reset",
 ) -> list[BenchResult]:
     """Run ContextReset benchmark at a given scale."""
     graph = _make_graph(db_path)
-    cases = generate_context_reset_cases(graph, scale_n=scale_n, rng=rng, difficulty=difficulty)
+    cases = generate_context_reset_cases(
+        graph, scale_n=scale_n, rng=rng, difficulty=difficulty, project=project
+    )
     results = []
     output_dir = "benchmark_results/partial/context_reset"
 
@@ -1602,7 +1635,44 @@ def run_context_reset_benchmark(
                 pack = ""
                 latency = 0.0
             elif method in ("rmca_full", "build_context"):
-                pack, latency = _run_build_context(graph, case.question, token_budget)
+                # Use scoped build_context so it queries within the project scope
+                pack, latency = _run_build_context_scoped(
+                    graph, case.question, token_budget, project=project
+                )
+            elif method == "query_graph":
+                # Pass project scope to query_graph
+                t0 = time.perf_counter()
+                try:
+                    result_q = graph.query(
+                        query=case.question,
+                        max_nodes=20,
+                        max_depth=2,
+                        retrieval_mode="hybrid",
+                        project=project,
+                    )
+                    lines = []
+                    used = 0
+                    budget = int(token_budget * 1.15)
+                    for node in result_q.nodes:
+                        line = f"[{node.node_type.value}] {node.label}: {node.content}"
+                        cost = token_estimate(line)
+                        if used + cost > budget:
+                            break
+                        lines.append(line)
+                        used += cost
+                    pack = "\n".join(lines)
+                except Exception as exc:
+                    LOGGER.debug("query_graph (scoped) failed: %s", exc)
+                    pack = ""
+                latency = (time.perf_counter() - t0) * 1000
+            elif method == "prime_context":
+                pack, latency = _run_prime_context(graph, case.question, token_budget)
+            elif method == "bm25_topk":
+                pack, latency = _run_bm25_topk(graph, case.question, token_budget)
+            elif method == "hybrid_rrf":
+                pack, latency = _run_hybrid_rrf(graph, case.question, token_budget)
+            elif method == "raw_context":
+                pack, latency = _run_raw_context(graph, case.question, token_budget)
             else:
                 runner = _METHOD_RUNNERS.get(method)
                 if runner is None:
@@ -1639,6 +1709,173 @@ def run_context_reset_benchmark(
                 )
 
     write_results(results, output_dir)
+    return results
+
+
+# ---------------------------------------------------------------------------
+# 7. PairwiseHiddenEdge benchmark family (Task 6)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class PairwiseHiddenEdgeCase:
+    case_id: str
+    question: str
+    gold_conflict_pairs: list[tuple[str, str]]
+    all_choice_labels: list[str]
+    all_constraint_labels: list[str]
+    scale_n: int
+
+
+def generate_pairwise_hidden_edge_cases(
+    graph: MemoryGraph,
+    scale_n: int,
+    rng: random.Random,
+    project: str = "pairwise_hidden",
+) -> list[PairwiseHiddenEdgeCase]:
+    """
+    Pairwise conflict task where conflict is ONLY in typed edges, not in node content.
+    Node contents do NOT contain 'conflict', 'contradict', or 'violates'.
+    The only way to discover conflicts is via graph edge traversal.
+    """
+    # Constraints — neutral language, no conflict words
+    constraints = [
+        ("Local deployment required", "The system must be deployed on local infrastructure."),
+        ("No third-party services", "All components must be self-hosted."),
+        ("Offline operation", "The system must function without internet connectivity."),
+    ]
+    # Choices — neutral language, no conflict words; conflicts_flag=True means it violates constraints
+    choices = [
+        ("SQLite storage", "Use SQLite for data persistence.", False),
+        ("Cloud database", "Use a managed cloud database service.", True),
+        ("External vector service", "Use a hosted vector search service.", True),
+        ("Local embeddings", "Use locally-hosted embedding models.", False),
+        ("Remote inference API", "Use a remote API for model inference.", True),
+        ("Local model serving", "Serve models locally using Ollama.", False),
+    ]
+
+    constraint_ids: dict[str, str] = {}
+    choice_ids: dict[str, str] = {}
+
+    for label, content in constraints:
+        r = graph.add_node(
+            label=label,
+            content=content,
+            node_type=NodeType.PREFERENCE,
+            project=project,
+            tags=["constraint"],
+        )
+        constraint_ids[label] = r.node.id
+
+    for label, content, conflicts_flag in choices:
+        r = graph.add_node(
+            label=label,
+            content=content,
+            node_type=NodeType.DECISION,
+            project=project,
+            tags=["choice"],
+        )
+        choice_ids[label] = r.node.id
+
+    # Add contradicts edges — this is the ONLY signal of conflict
+    gold_pairs: list[tuple[str, str]] = []
+    for choice_label, _, conflicts_flag in choices:
+        if conflicts_flag:
+            constraint_label = constraints[0][0]
+            graph.add_edge(
+                source_id=choice_ids[choice_label],
+                target_id=constraint_ids[constraint_label],
+                relationship=RelationType.CONTRADICTS.value,
+            )
+            gold_pairs.append((choice_label, constraint_label))
+
+    # Distractors
+    for i in range(scale_n - len(constraints) - len(choices)):
+        graph.add_node(
+            label=f"Component option {i}",
+            content=f"Use component variant {i} for subsystem {i % 4}.",
+            node_type=NodeType.DECISION,
+            project=project,
+            tags=["distractor"],
+        )
+
+    return [PairwiseHiddenEdgeCase(
+        case_id=f"pairwise_hidden_edge-{scale_n}",
+        question="Which implementation choices are incompatible with the active deployment requirements?",
+        gold_conflict_pairs=gold_pairs,
+        all_choice_labels=[c[0] for c in choices],
+        all_constraint_labels=[c[0] for c in constraints],
+        scale_n=scale_n,
+    )]
+
+
+def run_pairwise_hidden_edge_benchmark(
+    db_path: str,
+    scale_n: int,
+    methods: list[str],
+    token_budget: int,
+    rng: random.Random,
+    include_latency: bool = True,
+    verbose: bool = False,
+) -> list[BenchResult]:
+    """Run PairwiseHiddenEdge benchmark — conflict only discoverable via graph edges."""
+    graph = _make_graph(db_path)
+    cases = generate_pairwise_hidden_edge_cases(graph, scale_n=scale_n, rng=rng)
+    results = []
+
+    for case in cases:
+        if verbose:
+            print(f"  [PairwiseHiddenEdge] scale={scale_n} gold_pairs={len(case.gold_conflict_pairs)}")
+
+        for method in methods:
+            runner = _METHOD_RUNNERS.get(method)
+            if runner is None:
+                continue
+
+            pack, latency = runner(graph, case.question, token_budget)
+            pack_lower = pack.lower()
+
+            # Check which conflicting choices appear in the pack
+            found_conflict_labels = [
+                label for label, _ in case.gold_conflict_pairs
+                if label.lower() in pack_lower
+            ]
+            pred_pairs = [(label, case.gold_conflict_pairs[0][1]) for label in found_conflict_labels]
+            p_f1 = pairwise_f1(pred_pairs, case.gold_conflict_pairs)
+
+            conflict_recall = (
+                len(found_conflict_labels) / len(case.gold_conflict_pairs)
+                if case.gold_conflict_pairs else 1.0
+            )
+            all_mentioned = [
+                label for label in case.all_choice_labels
+                if label.lower() in pack_lower
+            ]
+            conflict_precision = (
+                len(found_conflict_labels) / len(all_mentioned)
+                if all_mentioned else 0.0
+            )
+
+            results.append(BenchResult(
+                benchmark_family="pairwise_hidden_edge",
+                scale_n=scale_n,
+                method=method,
+                score=p_f1,
+                exact_match=1.0 if ("conflict" in pack_lower or "contradict" in pack_lower) else 0.0,
+                f1=p_f1,
+                evidence_coverage=conflict_recall,
+                tokens_returned=token_estimate(pack),
+                latency_ms=round(latency, 1) if include_latency else 0.0,
+                context_pack_tokens=token_estimate(pack),
+                notes=(
+                    f"conflict_recall={conflict_recall:.2f} "
+                    f"conflict_precision={conflict_precision:.2f}"
+                ),
+            ))
+
+            if verbose:
+                print(f"    {method}: pairwise_f1={p_f1:.2f} recall={conflict_recall:.2f} tokens={token_estimate(pack)}")
+
     return results
 
 
@@ -1833,6 +2070,7 @@ _BENCHMARK_RUNNERS = {
     "pairwise": run_pairwise_benchmark,
     "codeqa": run_codeqa_benchmark,
     "context_reset": run_context_reset_benchmark,
+    "pairwise_hidden_edge": run_pairwise_hidden_edge_benchmark,
 }
 
 _ALL_FAMILIES = list(_BENCHMARK_RUNNERS.keys())

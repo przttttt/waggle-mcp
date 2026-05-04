@@ -366,14 +366,26 @@ class RecursiveContextController:
 
         if is_project_query or is_continuation:
             # Coding / project context decomposition
-            templates = [
-                (f"recent decisions about {topic}", "decisions", 1.0, ["graph", "hybrid"]),
-                (f"current unfinished tasks for {topic}", "unfinished_work", 0.95, ["graph", "hybrid"]),
-                (f"constraints and rejected directions for {topic}", "constraints", 0.90, ["graph", "hybrid"]),
-                (f"recent implementation details for {topic}", "implementation", 0.85, ["graph", "hybrid"]),
-                (f"conflicts or updates in {topic} direction", "conflicts", 0.80, ["graph"]),
-                (query, "original_query", 0.75, ["hybrid", "verbatim"]),
-            ]
+            if is_continuation and len(query.split()) <= 8:
+                # Generic continuation with no useful topic — use broad project-state subqueries
+                # that will match decision/constraint/next-step nodes regardless of topic
+                templates = [
+                    ("recent decisions", "decisions", 1.0, ["graph", "hybrid"]),
+                    ("active constraints and requirements", "constraints", 0.95, ["graph", "hybrid"]),
+                    ("next steps and unfinished work", "unfinished_work", 0.90, ["graph", "hybrid"]),
+                    ("superseded or rejected directions", "superseded", 0.85, ["graph"]),
+                    ("recent implementation details", "implementation", 0.80, ["graph", "hybrid"]),
+                    (query, "original_query", 0.75, ["hybrid", "verbatim"]),
+                ]
+            else:
+                templates = [
+                    (f"recent decisions about {topic}", "decisions", 1.0, ["graph", "hybrid"]),
+                    (f"current unfinished tasks for {topic}", "unfinished_work", 0.95, ["graph", "hybrid"]),
+                    (f"constraints and rejected directions for {topic}", "constraints", 0.90, ["graph", "hybrid"]),
+                    (f"recent implementation details for {topic}", "implementation", 0.85, ["graph", "hybrid"]),
+                    (f"conflicts or updates in {topic} direction", "conflicts", 0.80, ["graph"]),
+                    (query, "original_query", 0.75, ["hybrid", "verbatim"]),
+                ]
         else:
             # Generic memory query decomposition
             templates = [

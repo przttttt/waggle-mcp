@@ -1,21 +1,5 @@
 benchmark_family,scale_n,method,score,exact_match,f1,evidence_coverage,tokens_returned,latency_ms,context_pack_tokens,notes,seed,token_budget,ablation_variant,delta_vs_full,annotation,mean_score,std_score
-pairwise,128,ablation,1.0,0.0,0.0,0.0,515,21.6,515,,42,1200,rmca_full,0.0,,0.0,0.0
-pairwise,128,ablation,1.0,0.0,0.0,0.0,515,15.5,515,,42,1200,rmca_no_graph_expansion,0.0,,0.0,0.0
-pairwise,128,ablation,1.0,0.0,0.0,0.0,395,20.1,395,,42,1200,rmca_no_conflict_resolution,0.0,,0.0,0.0
-pairwise,128,ablation,0.0,0.0,0.0,0.0,135,8.7,135,,42,1200,rmca_no_decomposition,-1.0,decompose responsible for -1.000 on pairwise,0.0,0.0
-pairwise,128,ablation,0.0,0.0,0.0,0.0,357,30.6,357,,42,1200,rmca_random_subqueries,-1.0,random_subqueries responsible for -1.000 on pairwise,0.0,0.0
-pairwise,128,ablation,1.0,0.0,0.0,0.0,515,96.5,515,,43,1200,rmca_full,0.0,,0.0,0.0
-pairwise,128,ablation,1.0,0.0,0.0,0.0,515,15.8,515,,43,1200,rmca_no_graph_expansion,0.0,,0.0,0.0
-pairwise,128,ablation,1.0,0.0,0.0,0.0,395,19.7,395,,43,1200,rmca_no_conflict_resolution,0.0,,0.0,0.0
-pairwise,128,ablation,0.0,0.0,0.0,0.0,135,8.7,135,,43,1200,rmca_no_decomposition,-1.0,decompose responsible for -1.000 on pairwise,0.0,0.0
-pairwise,128,ablation,0.0,0.0,0.0,0.0,357,30.3,357,,43,1200,rmca_random_subqueries,-1.0,random_subqueries responsible for -1.000 on pairwise,0.0,0.0
-pairwise,128,ablation,1.0,0.0,0.0,0.0,515,20.2,515,,44,1200,rmca_full,0.0,,0.0,0.0
-pairwise,128,ablation,1.0,0.0,0.0,0.0,515,15.6,515,,44,1200,rmca_no_graph_expansion,0.0,,0.0,0.0
-pairwise,128,ablation,1.0,0.0,0.0,0.0,395,26.5,395,,44,1200,rmca_no_conflict_resolution,0.0,,0.0,0.0
-pairwise,128,ablation,0.0,0.0,0.0,0.0,135,9.8,135,,44,1200,rmca_no_decomposition,-1.0,decompose responsible for -1.000 on pairwise,0.0,0.0
-pairwise,128,ablation,0.0,0.0,0.0,0.0,357,30.7,357,,44,1200,rmca_random_subqueries,-1.0,random_subqueries responsible for -1.000 on pairwise,0.0,0.0
-pairwise,128,ablation,1.0,0.0,0.0,0.0,515,20.2,515,,-1,1200,rmca_full,0.0,,1.0,0.0
-pairwise,128,ablation,1.0,0.0,0.0,0.0,515,15.6,515,,-1,1200,rmca_no_graph_expansion,0.0,,1.0,0.0
-pairwise,128,ablation,1.0,0.0,0.0,0.0,395,26.5,395,,-1,1200,rmca_no_conflict_resolution,0.0,,1.0,0.0
-pairwise,128,ablation,0.0,0.0,0.0,0.0,135,9.8,135,,-1,1200,rmca_no_decomposition,-1.0,decompose responsible for -1.000 on pairwise,0.0,0.0
-pairwise,128,ablation,0.0,0.0,0.0,0.0,357,30.7,357,,-1,1200,rmca_random_subqueries,-1.0,random_subqueries responsible for -1.000 on pairwise,0.0,0.0
+pairwise_hidden_edge,128,ablation,1.0,0.0,0.0,0.0,421,28.4,421,,42,1200,rmca_full,0.0,,0.0,0.0
+pairwise_hidden_edge,128,ablation,1.0,0.0,0.0,0.0,421,16.4,421,,42,1200,rmca_no_graph_expansion,0.0,,0.0,0.0
+pairwise_hidden_edge,128,ablation,1.0,0.0,0.0,0.0,350,22.4,350,,42,1200,rmca_no_conflict_resolution,0.0,,0.0,0.0
+pairwise_hidden_edge,128,ablation,0.0,0.0,0.0,0.0,143,9.0,143,,42,1200,rmca_no_decomposition,-1.0,decompose responsible for -1.000 on pairwise_hidden_edge,0.0,0.0

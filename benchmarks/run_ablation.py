@@ -59,6 +59,8 @@ from rlm_style_waggle_eval import (
     run_context_reset_benchmark,
     _score_context_reset,
     exact_match,
+    generate_pairwise_hidden_edge_cases,
+    pairwise_f1,
 )
 
 LOGGER = logging.getLogger(__name__)
@@ -78,7 +80,7 @@ VARIANT_CONFIGS: dict[str, AblationConfig] = {
 }
 
 _ALL_VARIANTS = list(VARIANT_CONFIGS.keys())
-_ALL_FAMILIES = ["pairwise", "codeqa", "context_reset"]
+_ALL_FAMILIES = ["pairwise", "codeqa", "context_reset", "pairwise_hidden_edge"]
 
 # ---------------------------------------------------------------------------
 # Partial-run safety: flush results on unexpected exit
@@ -226,7 +228,6 @@ def run_ablation(
                                 label for label, _ in case.gold_conflict_pairs
                                 if label.lower() in pack_lower
                             ]
-                            from rlm_style_waggle_eval import pairwise_f1
                             pred_pairs = [
                                 (label, case.gold_conflict_pairs[0][1])
                                 for label in found_conflict_labels
@@ -305,6 +306,41 @@ def run_ablation(
                                 token_budget=token_budget,
                                 ablation_variant=variant_name,
                                 notes=json.dumps(scoring),
+                            )
+                            all_results.append(result)
+                            _partial_results.append(result)
+
+                            if verbose:
+                                print(f"  score={score:.3f} tokens={token_estimate(pack)}")
+
+                    elif family == "pairwise_hidden_edge":
+                        cases = generate_pairwise_hidden_edge_cases(graph, scale_n=scale, rng=rng)
+                        for case in cases:
+                            pack, latency = _run_ablation_variant(
+                                graph, case.question, token_budget, config
+                            )
+                            pack_lower = pack.lower()
+                            found_conflict_labels = [
+                                label for label, _ in case.gold_conflict_pairs
+                                if label.lower() in pack_lower
+                            ]
+                            pred_pairs = [
+                                (label, case.gold_conflict_pairs[0][1])
+                                for label in found_conflict_labels
+                            ]
+                            score = pairwise_f1(pred_pairs, case.gold_conflict_pairs)
+
+                            result = BenchResult(
+                                benchmark_family="pairwise_hidden_edge",
+                                scale_n=scale,
+                                method="ablation",
+                                score=score,
+                                tokens_returned=token_estimate(pack),
+                                latency_ms=round(latency, 1),
+                                context_pack_tokens=token_estimate(pack),
+                                seed=seed,
+                                token_budget=token_budget,
+                                ablation_variant=variant_name,
                             )
                             all_results.append(result)
                             _partial_results.append(result)

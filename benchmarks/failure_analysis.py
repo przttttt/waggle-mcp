@@ -305,6 +305,27 @@ def _build_report(classification: dict[str, dict[str, Any]]) -> str:
         "",
     ]
 
+    # --- Ablation interpretation ---
+    lines += [
+        "## Ablation Interpretation",
+        "",
+        "On the current synthetic pairwise benchmark, decomposition is the primary",
+        "load-bearing RMCA component. Disabling decomposition (`rmca_no_decomposition`)",
+        "or replacing it with random subqueries (`rmca_random_subqueries`) reduces",
+        "pairwise score from 1.0 to 0.0. Disabling graph expansion",
+        "(`rmca_no_graph_expansion`) or explicit conflict resolution",
+        "(`rmca_no_conflict_resolution`) does not reduce score at scale 128, indicating",
+        "that direct retrieval already surfaces the conflict nodes in this setup.",
+        "",
+        "Future pairwise variants should be constructed to isolate graph traversal",
+        "benefits. See `pairwise_hidden_edge` benchmark family for this purpose.",
+        "",
+        "---",
+        "",
+        SYNTHETIC_CAVEAT,
+        "",
+    ]
+
     return "\n".join(lines)
 
 

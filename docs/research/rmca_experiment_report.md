@@ -325,30 +325,27 @@ We ablate seven RMCA components by disabling one step at a time via `AblationCon
 
 | benchmark_family | scale_n | ablation_variant | score | delta_vs_full | annotation | tokens_returned |
 |---|---|---|---|---|---|---|
-| pairwise | 128 | rmca_full | 1.0 | 0.0 |  | 515 |
-| pairwise | 128 | rmca_no_graph_expansion | 1.0 | 0.0 |  | 515 |
-| pairwise | 128 | rmca_no_conflict_resolution | 1.0 | 0.0 |  | 395 |
-| pairwise | 128 | rmca_no_decomposition | 0.0 | -1.0 | decompose responsible for -1.000 on pairwise | 135 |
-| pairwise | 128 | rmca_random_subqueries | 0.0 | -1.0 | random_subqueries responsible for -1.000 on pairwise | 357 |
-| pairwise | 128 | rmca_full | 1.0 | 0.0 |  | 515 |
-| pairwise | 128 | rmca_no_graph_expansion | 1.0 | 0.0 |  | 515 |
-| pairwise | 128 | rmca_no_conflict_resolution | 1.0 | 0.0 |  | 395 |
-| pairwise | 128 | rmca_no_decomposition | 0.0 | -1.0 | decompose responsible for -1.000 on pairwise | 135 |
-| pairwise | 128 | rmca_random_subqueries | 0.0 | -1.0 | random_subqueries responsible for -1.000 on pairwise | 357 |
-| pairwise | 128 | rmca_full | 1.0 | 0.0 |  | 515 |
-| pairwise | 128 | rmca_no_graph_expansion | 1.0 | 0.0 |  | 515 |
-| pairwise | 128 | rmca_no_conflict_resolution | 1.0 | 0.0 |  | 395 |
-| pairwise | 128 | rmca_no_decomposition | 0.0 | -1.0 | decompose responsible for -1.000 on pairwise | 135 |
-| pairwise | 128 | rmca_random_subqueries | 0.0 | -1.0 | random_subqueries responsible for -1.000 on pairwise | 357 |
-| pairwise | 128 | rmca_full | 1.0 | 0.0 |  | 515 |
-| pairwise | 128 | rmca_no_graph_expansion | 1.0 | 0.0 |  | 515 |
-| pairwise | 128 | rmca_no_conflict_resolution | 1.0 | 0.0 |  | 395 |
-| pairwise | 128 | rmca_no_decomposition | 0.0 | -1.0 | decompose responsible for -1.000 on pairwise | 135 |
-| pairwise | 128 | rmca_random_subqueries | 0.0 | -1.0 | random_subqueries responsible for -1.000 on pairwise | 357 |
+| pairwise_hidden_edge | 128 | rmca_full | 1.0 | 0.0 |  | 421 |
+| pairwise_hidden_edge | 128 | rmca_no_graph_expansion | 1.0 | 0.0 |  | 421 |
+| pairwise_hidden_edge | 128 | rmca_no_conflict_resolution | 1.0 | 0.0 |  | 350 |
+| pairwise_hidden_edge | 128 | rmca_no_decomposition | 0.0 | -1.0 | decompose responsible for -1.000 on pairwise_hidden_edge | 143 |
 
 **Expected finding:** `rmca_no_graph_expansion` and `rmca_no_conflict_resolution`
 should score strictly lower than `rmca_full` on OOLONG-Pairs-style tasks, confirming
 that graph expansion and conflict resolution are load-bearing components.
+
+### Ablation Interpretation
+
+On the current synthetic pairwise benchmark, decomposition is the primary
+load-bearing RMCA component. Disabling decomposition (`rmca_no_decomposition`)
+or replacing it with random subqueries (`rmca_random_subqueries`) reduces
+pairwise score from 1.0 to 0.0. Disabling graph expansion
+(`rmca_no_graph_expansion`) or explicit conflict resolution
+(`rmca_no_conflict_resolution`) does not reduce score at scale 128, indicating
+that direct retrieval already surfaces the conflict nodes in this setup.
+
+Future pairwise variants should be constructed to isolate graph traversal
+benefits. See `pairwise_hidden_edge` benchmark family for this purpose.
 
 
 ---
@@ -365,9 +362,12 @@ bug node, multi-project distractors).
 
 | benchmark_family | scale_n | method | score | evidence_coverage | tokens_returned | latency_ms |
 |---|---|---|---|---|---|---|
-| ContextReset | 128 | raw_context | 0.0 | 0.25 | 1413 | 5.2 |
-| ContextReset | 128 | query_graph | 0.0 | 0.0 | 76 | 8.8 |
-| ContextReset | 128 | build_context | 0.0 | 0.0 | 121 | 32.6 |
+| ContextReset | 128 | no_memory | 0.0 | 0.0 | 0 | 0.0 |
+| ContextReset | 128 | raw_context | 0.0 | 0.25 | 1413 | 3.2 |
+| ContextReset | 128 | query_graph | 0.875 | 1.0 | 96 | 1.2 |
+| ContextReset | 128 | prime_context | 0.0 | 0.0 | 32 | 2.6 |
+| ContextReset | 128 | bm25_topk | 0.0 | 0.25 | 1413 | 2.3 |
+| ContextReset | 128 | rmca_full | 1.0 | 1.0 | 315 | 13.3 |
 
 **Key metric:** `active_decision_preference` — whether the method returns the
 latest active decision (source of the `updates` edge) rather than the superseded one.
@@ -589,6 +589,34 @@ The failure analysis supports the following claims:
 ---
 
 > **Synthetic data caveat:** The current RMCA evaluation uses deterministic synthetic Waggle memory tasks mapped to Waggle's graph/transcript environment. Numerical results **must not be compared** to results from the RLM paper (Zhang et al., 2026) or other long-context benchmarks until the exact public datasets (RULER S-NIAH, BrowseComp-Plus, OOLONG, OOLONG-Pairs, LongBench-v2 CodeQA) are downloaded and run with a matching model setup.
+
+
+---
+
+## Supported Claims
+
+1. **RMCA decomposition improves pairwise conflict retrieval** on synthetic memory tasks.
+   Evidence: Ablation shows `rmca_no_decomposition` drops pairwise score from 1.0 to 0.0.
+   Caveat: Synthetic data only.
+
+2. **RMCA structured context improves LLM answerability** on pairwise conflict tasks.
+   Evidence: Groq llama-3.3-70b F1=0.64 for rmca_full vs F1=0.00 for query_graph at scale=128.
+   Caveat: Single scale, single model. Needs replication across scales/seeds.
+
+3. **RMCA reduces injected tokens** compared with raw-context baselines on specific tasks.
+   Evidence: S-NIAH: build_context uses 13-14% of raw_context tokens at all scales.
+   Caveat: Synthetic data only.
+
+
+---
+
+## Not Yet Supported
+
+1. **RMCA solves session continuation / ContextReset.** Score 0.0 in current setup due to query/scope issues being investigated.
+2. **Graph expansion is load-bearing.** No delta observed at scale=128. Requires pairwise_hidden_edge benchmark.
+3. **Conflict resolution is load-bearing.** Same as above.
+4. **Results generalize to real-world agent traces.** Synthetic data only.
+5. **Results are comparable to the RLM paper's numerical results.** Different datasets and model setup.
 
 
 ---
