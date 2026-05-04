@@ -330,22 +330,38 @@ We ablate seven RMCA components by disabling one step at a time via `AblationCon
 | pairwise_hidden_edge | 128 | rmca_no_conflict_resolution | 1.0 | 0.0 |  | 350 |
 | pairwise_hidden_edge | 128 | rmca_no_decomposition | 0.0 | -1.0 | decompose responsible for -1.000 on pairwise_hidden_edge | 143 |
 
-**Expected finding:** `rmca_no_graph_expansion` and `rmca_no_conflict_resolution`
-should score strictly lower than `rmca_full` on OOLONG-Pairs-style tasks, confirming
-that graph expansion and conflict resolution are load-bearing components.
-
 ### Ablation Interpretation
 
-On the current synthetic pairwise benchmark, decomposition is the primary
-load-bearing RMCA component. Disabling decomposition (`rmca_no_decomposition`)
-or replacing it with random subqueries (`rmca_random_subqueries`) reduces
-pairwise score from 1.0 to 0.0. Disabling graph expansion
-(`rmca_no_graph_expansion`) or explicit conflict resolution
-(`rmca_no_conflict_resolution`) does not reduce score at scale 128, indicating
-that direct retrieval already surfaces the conflict nodes in this setup.
+On the current synthetic pairwise benchmark, **decomposition is the only RMCA component
+that has been causally isolated as load-bearing.** Disabling decomposition
+(`rmca_no_decomposition`) or replacing it with random subqueries (`rmca_random_subqueries`)
+reduces pairwise score from 1.0 to 0.0 at both scales (128, 512) across all 3 seeds (42, 43, 44).
 
-Future pairwise variants should be constructed to isolate graph traversal
-benefits. See `pairwise_hidden_edge` benchmark family for this purpose.
+Disabling graph expansion (`rmca_no_graph_expansion`) or explicit conflict resolution
+(`rmca_no_conflict_resolution`) does **not** reduce score at either scale. This is a
+**benchmark design limitation**, not evidence that these components are irrelevant:
+
+- The `_DeterministicEmbedding` model retrieves conflict nodes by label similarity without
+  needing edge traversal, because choice and constraint labels are semantically distinctive.
+- The scoring function checks whether conflict pair labels appear in the context pack —
+  it does not require explicit conflict annotation ("Possible conflict: X contradicts Y").
+
+**What would be needed to isolate graph expansion and conflict resolution:**
+1. A real embedding model (e.g., `all-MiniLM-L6-v2`) where semantically similar labels
+   require edge traversal to distinguish.
+2. A scorer that requires explicit conflict annotation in the context pack, not just
+   label presence.
+
+See `benchmark_results/pairwise_hidden_edge_ablation.md` and
+`docs/research/tables/hidden_edge_ablation.md` for the full analysis.
+
+### Claim Status After Hidden-Edge Ablation
+
+| Claim | Status | Evidence |
+|---|---|---|
+| Decomposition is load-bearing | ✅ Confirmed | Score 1.0→0.0 at both scales, all 3 seeds |
+| Graph expansion is load-bearing | ❌ Not isolated | No delta; deterministic embedding limitation |
+| Conflict resolution is load-bearing | ❌ Not isolated | No delta; scorer limitation |
 
 
 ---
@@ -613,27 +629,47 @@ benefits. See `pairwise_hidden_edge` benchmark family for this purpose.
 ## Supported Claims
 
 1. **RMCA decomposition improves pairwise conflict retrieval** on synthetic memory tasks.
-   Evidence: Ablation shows `rmca_no_decomposition` drops pairwise score from 1.0 to 0.0.
-   Caveat: Synthetic data only.
+   Evidence: Ablation shows `rmca_no_decomposition` drops pairwise score from 1.0 to 0.0
+   at both scales (128, 512) across all 3 seeds (42, 43, 44). Replicated on both standard
+   `pairwise` and `pairwise_hidden_edge` benchmarks.
+   Caveat: Synthetic data only. Deterministic embedding model.
 
 2. **RMCA structured context improves LLM answerability** on pairwise conflict tasks.
-   Evidence: Groq llama-3.3-70b F1=0.64 for rmca_full vs F1=0.00 for query_graph at scale=128.
-   Caveat: Single scale, single model. Needs replication across scales/seeds.
+   Evidence: Groq llama-3.3-70b EM=1.0, F1=1.0, hallucination=0.0 for rmca_full vs
+   EM=0.0, F1=0.0 for query_graph/bm25_topk/raw_context at scales 128 and 512,
+   consistent across 3 seeds.
+   Caveat: Single model (llama-3.3-70b). Synthetic data only.
 
 3. **RMCA reduces injected tokens** compared with raw-context baselines on specific tasks.
    Evidence: S-NIAH: build_context uses 13-14% of raw_context tokens at all scales.
+   Pairwise: build_context uses 31-38% of raw_context tokens while scoring 1.0 vs 0.0.
    Caveat: Synthetic data only.
 
+4. **RMCA solves ContextReset** (session-boundary state restoration).
+   Evidence: rmca_full scores 1.0 on all 6 ContextReset metrics (decision_recall,
+   constraint_recall, next_step_accuracy, superseded_context_handling,
+   active_decision_preference, evidence_coverage) after decomposition fix.
+   query_graph scores 0.875; no_memory scores 0.0.
+   Caveat: Easy difficulty only. Synthetic data.
 
 ---
 
 ## Not Yet Supported
 
-1. **RMCA solves session continuation / ContextReset.** Score 0.0 in current setup due to query/scope issues being investigated.
-2. **Graph expansion is load-bearing.** No delta observed at scale=128. Requires pairwise_hidden_edge benchmark.
-3. **Conflict resolution is load-bearing.** Same as above.
-4. **Results generalize to real-world agent traces.** Synthetic data only.
-5. **Results are comparable to the RLM paper's numerical results.** Different datasets and model setup.
+1. **Graph expansion is load-bearing.** `pairwise_hidden_edge` ablation shows no delta
+   when graph expansion is disabled. Root cause: deterministic embedding model retrieves
+   conflict nodes by label similarity without needing edge traversal. Requires a real
+   embedding model and semantically similar node labels to isolate.
+
+2. **Conflict resolution is load-bearing.** Same root cause as above. Additionally,
+   the current scorer checks label presence, not explicit conflict annotation. A scorer
+   requiring "Possible conflict: X contradicts Y" in the context pack would likely
+   show a delta.
+
+3. **Results generalize to real-world agent traces.** Synthetic data only.
+
+4. **Results are comparable to the RLM paper's numerical results.** Different datasets,
+   different model setup, synthetic vs real data.
 
 
 ---
