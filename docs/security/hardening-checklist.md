@@ -50,8 +50,6 @@ Use this checklist before exposing a self-hosted Waggle deployment to production
 - [ ] Use least-privilege API keys where possible.
 - [ ] Revoke old keys after rotation.
 - [ ] Review admin access regularly.
-- [ ] If Plus is enabled in the future, use RBAC.
-- [ ] If Plus is enabled in the future, use SSO.
 
 ## Monitoring and response
 

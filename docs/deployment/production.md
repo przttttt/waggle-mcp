@@ -218,16 +218,10 @@ PUT   /api/admin/retention
 POST  /api/admin/retention/prune
 GET   /api/admin/retention/runs
 GET   /api/admin/audit-events
-GET   /api/admin/identity/provider
-POST  /api/admin/identity/authorize
-POST  /api/admin/identity/callback
-POST  /api/admin/identity/roles/resolve
-POST  /api/admin/identity/permissions/check
 ```
 
 These endpoints can scope by `X-API-Key` or explicit `tenant_id`.
 When `X-API-Key` is present, the admin endpoints enforce `admin:read` or `admin:write` depending on the route.
-The identity endpoints are reserved for `Waggle Plus`; Core returns `501` until a private Plus module with `oidc_sso` support is installed.
 
 ## Audit events
 

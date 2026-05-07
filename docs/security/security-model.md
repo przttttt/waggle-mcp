@@ -36,31 +36,12 @@ Current non-goals in Core:
 - no SCIM
 - no enterprise identity provider integration
 
-Planned Plus-only scope:
-
-- RBAC
-- OIDC SSO
-- additional organization-level security controls
-
-Current Plus integration surface:
-
-- Core exposes `/api/admin/identity/provider` and `/api/admin/identity/authorize` as reserved admin routes
-- Core also exposes `/api/admin/identity/callback` as the normalized code-exchange route
-- Core also exposes `/api/admin/identity/roles/resolve` as the normalized role-mapping route
-- Core also exposes `/api/admin/identity/permissions/check` as the normalized permission-decision route
-- these routes return `501` until a private Plus module with the `oidc_sso` capability is installed
-- they are intended to front future OIDC authorization flows without changing the Core admin URL shape
-
 ## Authorization
 
 Current Core model:
 
 - API keys authenticate callers
 - tenants provide the primary isolation boundary
-
-Current limitation:
-
-- Core does not yet provide full user-level RBAC
 
 ## Data storage
 
@@ -130,7 +111,6 @@ Current Core model:
 
 Current limitation:
 
-- this is scope-based service authorization, not full user-level RBAC
 - identity federation and user-role enforcement remain Plus-only
 
 ## Network security

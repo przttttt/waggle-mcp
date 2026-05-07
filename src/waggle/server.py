@@ -81,15 +81,6 @@ from waggle.models import (
     TranscriptMessage,
     utc_now,
 )
-from waggle.plus import (
-    PLUS_CAPABILITY_OIDC_SSO,
-    PlusStatus,
-    describe_plus_contract,
-    detect_plus,
-    has_plus_capability,
-    load_identity_provider,
-    validate_identity_provider,
-)
 from waggle.rate_limit import RateLimiter
 from waggle.runtime_context import runtime_context
 from waggle.recursive_context import (
@@ -2887,43 +2878,6 @@ def create_http_application(app_server: WaggleServer, config: AppConfig) -> Star
             principal.require_scope(required_scope)
         return graph, principal
 
-    def _plus_identity_provider_response() -> tuple[PlusStatus, Any | None, JSONResponse | None]:
-        status, provider = load_identity_provider()
-        contract = describe_plus_contract(status.module_name)
-        if not status.installed:
-            return status, None, JSONResponse(
-                {
-                    "error": "plus_required",
-                    "message": "Waggle Plus identity integration is coming soon.",
-                    "plus": status.as_dict(),
-                    "contract": contract,
-                },
-                status_code=501,
-            )
-        if not has_plus_capability(PLUS_CAPABILITY_OIDC_SSO):
-            return status, None, JSONResponse(
-                {
-                    "error": "plus_capability_missing",
-                    "message": "Installed Waggle Plus module does not advertise OIDC SSO support.",
-                    "plus": status.as_dict(),
-                    "contract": contract,
-                },
-                status_code=501,
-            )
-        missing_methods = validate_identity_provider(provider)
-        if missing_methods:
-            return status, None, JSONResponse(
-                {
-                    "error": "plus_provider_missing",
-                    "message": "Waggle Plus is installed but did not provide a compatible identity provider.",
-                    "plus": status.as_dict(),
-                    "contract": contract,
-                    "missing_methods": missing_methods,
-                },
-                status_code=500,
-            )
-        return status, provider, None
-
     def _build_scoped_abhi(graph: Any, scope: dict[str, str]) -> tuple[dict[str, Any], dict[str, Any]]:
         snapshot = graph.get_graph_snapshot(**scope)
         return snapshot, build_abhi_document(snapshot)
@@ -3644,162 +3598,6 @@ def create_http_application(app_server: WaggleServer, config: AppConfig) -> Star
         )
         return JSONResponse([_serialize_audit_event(event) for event in events])
 
-    async def admin_identity_provider(request: Request) -> Response:
-        _require_http_scope(request, "admin:read")
-        status, provider, error_response = _plus_identity_provider_response()
-        if error_response is not None:
-            return error_response
-        status_payload = provider.status() if hasattr(provider, "status") and callable(provider.status) else {}
-        return JSONResponse(
-            {
-                "plus": status.as_dict(),
-                "contract": describe_plus_contract(status.module_name),
-                "provider": status_payload,
-            }
-        )
-
-    async def admin_identity_authorize(request: Request) -> Response:
-        payload = await request.json()
-        _require_http_scope(request, "admin:read")
-        status, provider, error_response = _plus_identity_provider_response()
-        if error_response is not None:
-            return error_response
-        authorize_url_fn = getattr(provider, "authorize_url", None)
-        if not callable(authorize_url_fn):
-            return JSONResponse(
-                {
-                    "error": "plus_provider_missing_method",
-                    "message": "Identity provider does not expose authorize_url().",
-                    "plus": status.as_dict(),
-                },
-                status_code=500,
-            )
-        redirect_uri = str(payload.get("redirect_uri", "")).strip()
-        state = str(payload.get("state", "")).strip()
-        if not redirect_uri:
-            raise ValidationFailure("redirect_uri is required.")
-        authorize_url = authorize_url_fn(redirect_uri=redirect_uri, state=state)
-        return JSONResponse(
-            {
-                "authorize_url": str(authorize_url),
-                "plus": status.as_dict(),
-                "contract": describe_plus_contract(status.module_name),
-            }
-        )
-
-    async def admin_identity_callback(request: Request) -> Response:
-        payload = await request.json()
-        _require_http_scope(request, "admin:read")
-        status, provider, error_response = _plus_identity_provider_response()
-        if error_response is not None:
-            return error_response
-        exchange_code_fn = getattr(provider, "exchange_code", None)
-        if not callable(exchange_code_fn):
-            return JSONResponse(
-                {
-                    "error": "plus_provider_missing_method",
-                    "message": "Identity provider does not expose exchange_code().",
-                    "plus": status.as_dict(),
-                    "contract": describe_plus_contract(status.module_name),
-                },
-                status_code=500,
-            )
-        code = str(payload.get("code", "")).strip()
-        redirect_uri = str(payload.get("redirect_uri", "")).strip()
-        state = str(payload.get("state", "")).strip()
-        if not code:
-            raise ValidationFailure("code is required.")
-        if not redirect_uri:
-            raise ValidationFailure("redirect_uri is required.")
-        session_payload = exchange_code_fn(code=code, redirect_uri=redirect_uri, state=state)
-        if not isinstance(session_payload, dict):
-            raise ValidationFailure("Identity provider exchange_code() must return an object.")
-        subject = str(session_payload.get("subject", "")).strip()
-        if not subject:
-            raise ValidationFailure("Identity provider session payload must include subject.")
-        return JSONResponse(
-            {
-                "session": session_payload,
-                "plus": status.as_dict(),
-                "contract": describe_plus_contract(status.module_name),
-            }
-        )
-
-    async def admin_identity_roles_resolve(request: Request) -> Response:
-        payload = await request.json()
-        _require_http_scope(request, "admin:read")
-        status, provider, error_response = _plus_identity_provider_response()
-        if error_response is not None:
-            return error_response
-        map_roles_fn = getattr(provider, "map_roles", None)
-        if not callable(map_roles_fn):
-            return JSONResponse(
-                {
-                    "error": "plus_provider_missing_method",
-                    "message": "Identity provider does not expose map_roles().",
-                    "plus": status.as_dict(),
-                    "contract": describe_plus_contract(status.module_name),
-                },
-                status_code=500,
-            )
-        session_payload = payload.get("session")
-        if not isinstance(session_payload, dict):
-            raise ValidationFailure("session is required and must be an object.")
-        resolved = map_roles_fn(session=session_payload)
-        if not isinstance(resolved, dict):
-            raise ValidationFailure("Identity provider map_roles() must return an object.")
-        primary_role = str(resolved.get("primary_role", "")).strip()
-        if not primary_role:
-            raise ValidationFailure("Role mapping payload must include primary_role.")
-        return JSONResponse(
-            {
-                "resolved": resolved,
-                "plus": status.as_dict(),
-                "contract": describe_plus_contract(status.module_name),
-            }
-        )
-
-    async def admin_identity_permissions_check(request: Request) -> Response:
-        payload = await request.json()
-        _require_http_scope(request, "admin:read")
-        status, provider, error_response = _plus_identity_provider_response()
-        if error_response is not None:
-            return error_response
-        check_permission_fn = getattr(provider, "check_permission", None)
-        if not callable(check_permission_fn):
-            return JSONResponse(
-                {
-                    "error": "plus_provider_missing_method",
-                    "message": "Identity provider does not expose check_permission().",
-                    "plus": status.as_dict(),
-                    "contract": describe_plus_contract(status.module_name),
-                },
-                status_code=500,
-            )
-        resolved = payload.get("resolved")
-        if not isinstance(resolved, dict):
-            raise ValidationFailure("resolved is required and must be an object.")
-        permission = str(payload.get("permission", "")).strip()
-        if not permission:
-            raise ValidationFailure("permission is required.")
-        decision = check_permission_fn(
-            resolved=resolved,
-            permission=permission,
-            resource_type=str(payload.get("resource_type", "")).strip(),
-            resource_id=str(payload.get("resource_id", "")).strip(),
-        )
-        if not isinstance(decision, dict):
-            raise ValidationFailure("Identity provider check_permission() must return an object.")
-        if "allowed" not in decision:
-            raise ValidationFailure("Permission decision payload must include allowed.")
-        return JSONResponse(
-            {
-                "decision": decision,
-                "plus": status.as_dict(),
-                "contract": describe_plus_contract(status.module_name),
-            }
-        )
-
     app = Starlette(
         routes=[
             Route("/health/live", live),
@@ -3829,11 +3627,6 @@ def create_http_application(app_server: WaggleServer, config: AppConfig) -> Star
             Route("/api/admin/retention/prune", admin_retention_prune, methods=["POST"]),
             Route("/api/admin/retention/runs", admin_retention_runs, methods=["GET"]),
             Route("/api/admin/audit-events", admin_audit_events, methods=["GET"]),
-            Route("/api/admin/identity/provider", admin_identity_provider, methods=["GET"]),
-            Route("/api/admin/identity/authorize", admin_identity_authorize, methods=["POST"]),
-            Route("/api/admin/identity/callback", admin_identity_callback, methods=["POST"]),
-            Route("/api/admin/identity/roles/resolve", admin_identity_roles_resolve, methods=["POST"]),
-            Route("/api/admin/identity/permissions/check", admin_identity_permissions_check, methods=["POST"]),
             Mount("/graph-assets", app=StaticFiles(packages=[("waggle", "static/graph")], html=False, check_dir=False)),
             Mount("/mcp", app=service.mcp_asgi),
         ],
@@ -4017,15 +3810,6 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     subparsers = parser.add_subparsers(dest="command")
     subparsers.add_parser("serve", help="Run the MCP server using the configured stdio or HTTP transport.")
-    plus = subparsers.add_parser(
-        "plus",
-        help="Show Waggle Plus detection status for this installation.",
-        description=(
-            "Inspect whether the optional proprietary Waggle Plus extension is installed. "
-            "Core remains fully usable when Plus is absent."
-        ),
-    )
-    plus.add_argument("--json", action="store_true", help="Print machine-readable JSON output.")
     graph_editor = subparsers.add_parser(
         "edit-graph",
         help="Launch the visual graph editor in a browser window.",
@@ -5116,27 +4900,9 @@ def _run_doctor(config: AppConfig, *, fix: bool = False) -> int:
     else:
         _ok("normal mode: embedding loads in background. First semantic call may wait up to ~30 s.")
 
-    # ── 6. Waggle Plus detection ─────────────────────────────────────────────
-    print(_c(_BOLD, "\n[6] Waggle Plus"))
-    plus_status = detect_plus()
-    print(f"  Module name: {plus_status.module_name}")
-    if not plus_status.enabled:
-        print(f"  Status: disabled ({plus_status.message})")
-    elif plus_status.installed:
-        version_text = plus_status.version or "unknown"
-        _ok(f"Detected Waggle Plus {version_text}")
-        if plus_status.capabilities:
-            print(f"  Capabilities: {', '.join(plus_status.capabilities)}")
-        ok_items.append("Waggle Plus module detected")
-    else:
-        print(f"  {_c(_CYAN, chr(0x2139))} {plus_status.message}")
-        if plus_status.import_error:
-            issues.append("Waggle Plus import failed; reinstall the private package when it becomes available.")
-            _fail(f"Import error: {plus_status.import_error}")
-
-    # ── 7. Windows stdout encoding ───────────────────────────────────────────
+    # ── 6. Windows stdout encoding ───────────────────────────────────────────
     if sys.platform == "win32":
-        print(_c(_BOLD, "\n[7] Windows stdout encoding"))
+        print(_c(_BOLD, "\n[6] Windows stdout encoding"))
         enc = getattr(sys.stdout, "encoding", "unknown")
         if enc.lower().replace("-", "") in ("utf8", "utf8"):
             _ok(f"stdout encoding: {enc}")
@@ -5149,8 +4915,8 @@ def _run_doctor(config: AppConfig, *, fix: bool = False) -> int:
             )
             issues.append(f"Windows stdout encoding is {enc!r} — set PYTHONUTF8=1 or use python -X utf8.")
 
-    # ── 8. Known gotchas ─────────────────────────────────────────────────────
-    print(_c(_BOLD, "\n[8] Known API gotchas"))
+    # ── 7. Known gotchas ─────────────────────────────────────────────────────
+    print(_c(_BOLD, "\n[7] Known API gotchas"))
     print(_DOCTOR_KNOWN_GOTCHAS)
 
     # ── Summary ──────────────────────────────────────────────────────────────
@@ -5165,34 +4931,6 @@ def _run_doctor(config: AppConfig, *, fix: bool = False) -> int:
         print(_c(_GREEN, f"All checks passed ({len(ok_items)} OK). Waggle looks healthy."))
         print()
         return 0
-
-
-def _run_plus_command(args: argparse.Namespace) -> int:
-    status = detect_plus()
-    contract = describe_plus_contract(status.module_name)
-    if bool(getattr(args, "json", False)):
-        print(json.dumps({"plus": status.as_dict(), "contract": contract}, indent=2))
-        return 0
-
-    print()
-    print(_c(_BOLD, "waggle-mcp plus"))
-    print(_c(_CYAN, "─" * 50))
-    print(f"  Module name: {status.module_name}")
-    print(f"  Detection enabled: {'yes' if status.enabled else 'no'}")
-    print(f"  Installed: {'yes' if status.installed else 'no'}")
-    print(f"  Status: {status.message}")
-    if status.version:
-        print(f"  Version: {status.version}")
-    if status.capabilities:
-        print(f"  Capabilities: {', '.join(status.capabilities)}")
-    print(f"  Identity provider factory: {contract['identity_provider']['factory']}")
-    print(f"  Reserved routes: {', '.join(route['path'] for route in contract['identity_provider']['reserved_routes'])}")
-    if status.import_error:
-        print(f"  Import error: {status.import_error}")
-    if not status.installed:
-        print("  Distribution: Waggle Plus will ship as a separate private package when available.")
-    print()
-    return 0
 
 
 # ---------------------------------------------------------------------------
@@ -6135,8 +5873,6 @@ def main() -> None:
     if command == "features":
         print(_FEATURES_GUIDE)
         return
-    if command == "plus":
-        sys.exit(_run_plus_command(args))
     if command == "doctor":
         # Doctor only needs the config — not a live backend connection.
         config = AppConfig.from_env()

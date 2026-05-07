@@ -21,15 +21,9 @@
 
 ---
 
-## Core And Plus
+## Core
 
-This repository is **Waggle Core**.
-
-- `Waggle Core` is public, Apache-2.0 licensed, and available on GitHub + PyPI.
-- `Waggle Plus` is planned as the paid layer for advanced reasoning and team features.
-- `Waggle Plus` is **coming soon** and is not available for purchase yet.
-
-See [COMMERCIAL.md](COMMERCIAL.md) for the current product split.
+This repository is the public Waggle product repo: Apache-2.0 licensed, available on GitHub and PyPI, and focused on the local-first memory engine.
 
 ---
 
@@ -59,7 +53,6 @@ For self-hosted production review and security posture:
 - [Production deployment guide](docs/deployment/production.md)
 - [Security model](docs/security/security-model.md)
 - [Hardening checklist](docs/security/hardening-checklist.md)
-- [Waggle Plus integration contract](docs/plus-integration.md)
 - [Reference](docs/reference.md)
 
 ---
@@ -100,28 +93,6 @@ Waggle Core is the open-source local memory foundation:
 - local embeddings or deterministic fallback
 - graph querying, observation, and context priming
 - import/export and graph inspection utilities
-
-### What Is Planned For Plus
-
-Waggle Plus is the future paid layer and is not shipping yet.
-
-Planned areas include:
-
-- advanced reranking
-- contradiction intelligence
-- premium context-building workflows
-- higher official-binary usage limits
-- team and enterprise capabilities
-
-Core already exposes the extension boundary for this split. When the paid package exists, the public CLI will detect it as an optional private module:
-
-```bash
-waggle-mcp plus
-```
-
-The intended package name is `waggle_plus`, distributed separately from the public `waggle-mcp` PyPI release.
-
----
 
 ## Product Scope
 

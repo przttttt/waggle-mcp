@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-import sys
-from types import ModuleType
 from types import SimpleNamespace
 
 import numpy as np
@@ -22,7 +20,6 @@ from waggle.server import (
     _run_admin_command,
     _run_doctor,
     _run_graph_editor_command,
-    _run_plus_command,
     _run_setup,
     _setup_clients_from_args,
     _write_codex_agents,
@@ -123,7 +120,6 @@ def test_tool_schemas_are_glama_friendly(tmp_path: Path) -> None:
 def test_parser_accepts_graph_editor_commands() -> None:
     parser = _build_parser()
 
-    plus_args = parser.parse_args(["plus", "--json"])
     create_api_key_args = parser.parse_args(["create-api-key", "--tenant-id", "workspace-a", "--name", "prod-agent", "--expires-in-days", "30", "--created-by", "ops@example.com", "--scopes", "graph:read,admin:read"])
     list_audit_args = parser.parse_args(["list-audit-events", "--tenant-id", "workspace-a", "--type", "api_key.created", "--limit", "25"])
     retention_status_args = parser.parse_args(["retention-status", "--tenant-id", "workspace-a"])
@@ -145,8 +141,6 @@ def test_parser_accepts_graph_editor_commands() -> None:
     pull_args = parser.parse_args(["pull", "file123", "--client-secret-path", "client.json"])
     share_args = parser.parse_args(["share", "file123", "--client-secret-path", "client.json"])
 
-    assert plus_args.command == "plus"
-    assert plus_args.json is True
     assert create_api_key_args.command == "create-api-key"
     assert create_api_key_args.expires_in_days == 30
     assert create_api_key_args.created_by == "ops@example.com"
@@ -293,77 +287,6 @@ def test_doctor_fix_reembeds_mixed_embedding_model_ids(tmp_path: Path, capsys: p
     assert repaired["mixed_models"] is False
     assert repaired["transcript_stale_rows"] == 0
 
-
-def test_plus_command_reports_coming_soon_when_plus_is_absent(
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    monkeypatch.delenv("WAGGLE_PLUS_MODULE", raising=False)
-    monkeypatch.delenv("WAGGLE_PLUS_DISABLED", raising=False)
-    sys.modules.pop("waggle_plus", None)
-
-    exit_code = _run_plus_command(SimpleNamespace(json=False))
-    stdout = capsys.readouterr().out
-
-    assert exit_code == 0
-    assert "Installed: no" in stdout
-    assert "coming soon" in stdout.lower()
-    assert "separate private package" in stdout
-
-
-def test_plus_command_reports_detected_module(
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    fake_plus = ModuleType("waggle_plus")
-    fake_plus.__version__ = "1.2.3"
-    fake_plus.WAGGLE_PLUS_CAPABILITIES = ("advanced_context", "contradiction_intelligence")
-    monkeypatch.delenv("WAGGLE_PLUS_MODULE", raising=False)
-    monkeypatch.delenv("WAGGLE_PLUS_DISABLED", raising=False)
-    monkeypatch.setitem(sys.modules, "waggle_plus", fake_plus)
-
-    try:
-        exit_code = _run_plus_command(SimpleNamespace(json=False))
-        stdout = capsys.readouterr().out
-    finally:
-        sys.modules.pop("waggle_plus", None)
-
-    assert exit_code == 0
-    assert "Installed: yes" in stdout
-    assert "Version: 1.2.3" in stdout
-    assert "advanced_context, contradiction_intelligence" in stdout
-    assert "Identity provider factory: build_identity_provider" in stdout
-    assert "/api/admin/identity/provider" in stdout
-    assert "/api/admin/identity/callback" in stdout
-    assert "/api/admin/identity/roles/resolve" in stdout
-    assert "/api/admin/identity/permissions/check" in stdout
-
-
-def test_plus_command_json_includes_contract(
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    fake_plus = ModuleType("waggle_plus")
-    fake_plus.__version__ = "1.2.3"
-    fake_plus.WAGGLE_PLUS_CAPABILITIES = ("oidc_sso", "rbac")
-    monkeypatch.delenv("WAGGLE_PLUS_MODULE", raising=False)
-    monkeypatch.delenv("WAGGLE_PLUS_DISABLED", raising=False)
-    monkeypatch.setitem(sys.modules, "waggle_plus", fake_plus)
-
-    try:
-        exit_code = _run_plus_command(SimpleNamespace(json=True))
-        payload = json.loads(capsys.readouterr().out)
-    finally:
-        sys.modules.pop("waggle_plus", None)
-
-    assert exit_code == 0
-    assert payload["plus"]["installed"] is True
-    assert payload["contract"]["module_name"] == "waggle_plus"
-    assert payload["contract"]["identity_provider"]["factory"] == "build_identity_provider"
-    assert payload["contract"]["identity_provider"]["reserved_routes"][0]["path"] == "/api/admin/identity/provider"
-    assert payload["contract"]["identity_provider"]["required_methods"] == ["status", "authorize_url", "exchange_code", "map_roles", "check_permission"]
-    assert payload["contract"]["identity_provider"]["role_mapping"]["supported_roles"] == ["Owner", "Admin", "Developer", "Viewer", "Auditor"]
-    assert payload["contract"]["identity_provider"]["permission_check"]["required_fields"] == ["allowed"]
 
 
 def test_create_and_list_api_keys_cli_redacts_hash(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
