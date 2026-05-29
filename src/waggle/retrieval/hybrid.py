@@ -635,7 +635,7 @@ class HybridRetriever:
                 "bm25": self.config.bm25_weight * item.layer_scores.get("bm25", 0.0),
                 "graph_expansion": self.config.graph_weight * item.layer_scores.get("graph_expansion", 0.0),
                 "recency": self.config.recency_weight * decay,
-                }
+            }
             total = sum(raw.values()) or 1.0
             item.score_explanation = {k: round(v / total, 4) for k, v in raw.items()}
             item.score_explanation["final_score"] = round(item.score, 4)

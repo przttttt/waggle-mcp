@@ -314,13 +314,14 @@ def test_cross_session_codeword_verification_uses_verbatim_layer_when_extraction
 
     assert any("saffron-badger-v2" in hit.content for hit in hybrid.hybrid_hits)
     assert any("saffron-badger-v2" in hit.content for hit in verbatim.hybrid_hits)
+
+
 def test_score_explanation_keys_present():
-    from datetime import timezone
     candidate = CandidateMemory(
         candidate_id="test-1",
         content="test content",
         source="transcript",
-        observed_at=datetime(2024, 1, 1, tzinfo=timezone.utc),
+        observed_at=datetime(2024, 1, 1, tzinfo=UTC),
     )
     candidate.layer_scores["vector_transcript"] = 0.5
     candidate.layer_scores["bm25"] = 0.3
@@ -362,6 +363,8 @@ def test_layer_scores_backward_compatible():
     candidate.layer_scores["bm25"] = 0.6
     assert "vector_transcript" in candidate.layer_scores
     assert "bm25" in candidate.layer_scores
+
+
 def test_score_explanation_includes_recency_contribution():
     candidate = CandidateMemory(
         candidate_id="test-4",
