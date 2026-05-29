@@ -86,6 +86,7 @@ def make_app(tmp_path: Path) -> WaggleServer:
 def write_waggle_codex_config(home: Path, db_path: Path) -> None:
     codex_dir = home / ".codex"
     codex_dir.mkdir(parents=True)
+    normalized_db_path = db_path.as_posix()
     (codex_dir / "config.toml").write_text(
         "\n".join(
             [
@@ -93,7 +94,7 @@ def write_waggle_codex_config(home: Path, db_path: Path) -> None:
                 'command = "waggle-mcp"',
                 "",
                 "[mcp_servers.waggle.env]",
-                f'WAGGLE_DB_PATH = "{db_path}"',
+                f'WAGGLE_DB_PATH = "{normalized_db_path}"',
                 "",
             ]
         ),
