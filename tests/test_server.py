@@ -1458,7 +1458,7 @@ def test_default_graph_uses_sqlite_backend_by_default(tmp_path: Path, monkeypatc
 def test_default_graph_uses_home_scoped_sqlite_path(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.delenv("WAGGLE_BACKEND", raising=False)
     monkeypatch.delenv("WAGGLE_DB_PATH", raising=False)
-    
+
     # Set WAGGLE_DB_PATH directly to avoid Path.home() issues
     expected_db = tmp_path / ".waggle" / "waggle.db"
     monkeypatch.setenv("WAGGLE_DB_PATH", str(expected_db))
@@ -1502,10 +1502,10 @@ def test_default_graph_prefers_codex_waggle_db_path_when_env_is_unset(
 ) -> None:
     monkeypatch.delenv("WAGGLE_BACKEND", raising=False)
     monkeypatch.delenv("WAGGLE_DB_PATH", raising=False)
-    
+
     configured_db = tmp_path / ".waggle" / "memory.db"
     write_waggle_codex_config(tmp_path, configured_db)
-    
+
     # Directly set WAGGLE_DB_PATH to the configured value
     monkeypatch.setenv("WAGGLE_DB_PATH", str(configured_db))
 
