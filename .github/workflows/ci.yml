@@ -61,9 +61,9 @@ jobs:
       - name: Verify critical dependencies
         run: |
           pip list
-          python -c "import networkx; print('✓ networkx OK')"
-          python -c "import pytest; print('✓ pytest OK')"
-          python -c "import waggle; print('✓ waggle OK')"
+          python -c "import networkx; print('networkx OK')"
+          python -c "import pytest; print('pytest OK')"
+          python -c "import waggle; print('waggle OK')"
 
       # Use deterministic embeddings so tests never require a 420 MB download
       - name: Run tests (deterministic mode, no ML)
