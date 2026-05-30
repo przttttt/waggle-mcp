@@ -165,7 +165,7 @@ To continue generating `sk_live_` keys in production, set:
 
 `WAGGLE_API_KEY_ENVIRONMENT=live`
 
-The provided production deployment configurations (`docker-compose.prod.yml`, `kubernetes/configmap.yaml`, and `render.yaml`) already set this value.
+The provided production deployment configurations (`docker-compose.prod.yml`, `deploy/kubernetes/configmap.yaml`, and `render.yaml`) already set this value.
 
 No action is required for local or development environments. The default `sk_test_` prefix is intentional for test and local deployments.
 
