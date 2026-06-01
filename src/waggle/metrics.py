@@ -15,9 +15,9 @@ class MetricsRegistry:
         self._lock = threading.Lock()
         self._counters: Counter[tuple[str, tuple[tuple[str, str], ...]]] = Counter()
         self._gauges: dict[tuple[str, tuple[tuple[str, str], ...]], float] = {}
-        self._histograms: defaultdict[
-            tuple[str, tuple[tuple[str, str], ...]], HistogramSeries
-        ] = defaultdict(lambda: {"count": 0, "sum": 0.0})
+        self._histograms: defaultdict[tuple[str, tuple[tuple[str, str], ...]], HistogramSeries] = defaultdict(
+            lambda: {"count": 0, "sum": 0.0}
+        )
 
     def increment(self, name: str, value: int = 1, **labels: str) -> None:
         key = (name, tuple(sorted((k, str(v)) for k, v in labels.items())))
@@ -47,8 +47,8 @@ class MetricsRegistry:
                 lines.append(f"{name}{label_text} {value}")
             for (name, labels), series in sorted(self._histograms.items()):
                 label_text = self._format_labels(labels)
-                lines.append(f'{name}_count{label_text} {series["count"]}')
-                lines.append(f'{name}_sum{label_text} {series["sum"]}')
+                lines.append(f"{name}_count{label_text} {series['count']}")
+                lines.append(f"{name}_sum{label_text} {series['sum']}")
         return "\n".join(lines) + ("\n" if lines else "")
 
     @staticmethod

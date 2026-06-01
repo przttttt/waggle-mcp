@@ -1,4 +1,5 @@
 import pytest
+
 from waggle.metrics import MetricsRegistry
 
 
@@ -18,14 +19,10 @@ def test_histogram_streaming_aggregation():
     output = registry.render_prometheus()
 
     # Find and parse the sum from the output
-    sum_line = [
-        line
-        for line in output.split("\n")
-        if 'my_histogram_sum{label="test"}' in line
-    ][0]
+    sum_line = next(line for line in output.split("\n") if 'my_histogram_sum{label="test"}' in line)
     observed_sum = float(sum_line.split(" ")[1])
 
-    assert f'my_histogram_count{{label="test"}} 10000' in output
+    assert 'my_histogram_count{label="test"} 10000' in output
     assert observed_sum == pytest.approx(expected_sum)
 
 
