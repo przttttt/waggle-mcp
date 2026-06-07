@@ -268,8 +268,9 @@ class TestIssue67:
                     pass
             done.set()
 
-        _start(workload)
+        t = _start(workload)
         assert done.wait(timeout=2), "Thread hung — deadlock still present"
+        _join(t)
 
     def test_error_message_mentions_upgrade(self):
         """RuntimeError message must say 'upgrade' for debuggability."""
