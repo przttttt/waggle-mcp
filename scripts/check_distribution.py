@@ -2,11 +2,9 @@ from __future__ import annotations
 
 import json
 import re
-import sys
 from pathlib import Path
 
 import yaml
-
 
 ROOT = Path(__file__).resolve().parents[1]
 INSTALL_DOCS = [
@@ -88,7 +86,10 @@ def main() -> int:
         for relative_target in markdown_link_pattern.findall(text):
             if relative_target.startswith("/"):
                 continue
-            target = (markdown_path.parent / relative_target).resolve()
+            target_without_anchor = relative_target.split("#", 1)[0]
+            if not target_without_anchor:
+                continue
+            target = (markdown_path.parent / target_without_anchor).resolve()
             if not target.exists():
                 failures.append(
                     f"Broken local markdown link in {markdown_path.relative_to(ROOT)}: {relative_target}"
